@@ -5,6 +5,7 @@ import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.base.PatchContext;
 import io.fabric8.kubernetes.client.dsl.base.PatchType;
+import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -86,7 +87,11 @@ public class ApplyController {
                             ? gkr.getMetadata().getNamespace()
                             : namespace;
                     try {
-                        client.genericKubernetesResources(gkr.getApiVersion(), kind)
+                        // genericKubernetesResources(apiVersion, kind) は内部で API discovery を
+                        // 行うため、CRD が発見できない場合に "Could not find the metadata" を投げる。
+                        // ResourceDefinitionContext を明示的に構築することで discovery を回避する。
+                        ResourceDefinitionContext rdc = buildRdc(gkr.getApiVersion(), kind);
+                        client.genericKubernetesResources(rdc)
                                 .inNamespace(ns)
                                 .withName(name)
                                 .patch(ctx, gkr);
@@ -124,5 +129,49 @@ public class ApplyController {
     /** マルチドキュメント YAML を "---" で分割して個々のドキュメント文字列リストを返す。 */
     private List<String> splitYamlDocs(String yaml) {
         return Arrays.asList(yaml.split("(?m)^---\\s*$"));
+    }
+
+    /**
+     * apiVersion (例: "kuadrant.io/v1beta2" または "v1") と kind から
+     * ResourceDefinitionContext を構築する。
+     * API discovery を使わないため、CRD が未登録でも動作する。
+     */
+    private ResourceDefinitionContext buildRdc(String apiVersion, String kind) {
+        String group;
+        String version;
+        if (apiVersion != null && apiVersion.contains("/")) {
+            String[] parts = apiVersion.split("/", 2);
+            group   = parts[0];
+            version = parts[1];
+        } else {
+            group   = "";          // core API group
+            version = apiVersion != null ? apiVersion : "v1";
+        }
+        return new ResourceDefinitionContext.Builder()
+                .withGroup(group)
+                .withVersion(version)
+                .withKind(kind)
+                .withPlural(toPlural(kind))
+                .withNamespaced(true)
+                .build();
+    }
+
+    /**
+     * kind を複数形 (plural) に変換する。
+     * Kubernetes の命名規則に従った簡易実装。
+     *   AuthPolicy        → authpolicies
+     *   RateLimitPolicy   → ratelimitpolicies
+     *   HTTPRoute         → httproutes
+     *   Gateway           → gateways
+     *   Secret            → secrets
+     *   ConfigMap         → configmaps
+     */
+    private String toPlural(String kind) {
+        if (kind == null) return "unknowns";
+        String lower = kind.toLowerCase();
+        if (lower.endsWith("policy"))  return lower.substring(0, lower.length() - 6) + "policies";
+        if (lower.endsWith("status"))  return lower + "es";
+        if (lower.endsWith("s"))       return lower + "es";
+        return lower + "s";
     }
 }
