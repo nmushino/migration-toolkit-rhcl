@@ -155,10 +155,15 @@ deploy_backend() {
   done
   log_ok "バックエンドリソースを適用しました"
 
-  # S2I バイナリビルド（ソースコードを送信し、S2I 側で Maven ビルドを実行）
-  # BuildConfig の MAVEN_ARGS="package -DskipTests -Dquarkus.package.type=fast-jar" により
-  # OpenShift 上の openjdk-21 S2I イメージが Maven ビルドを行う。
-  # target/ は .s2iignore で除外済みのためアップロードエラーが発生しない。
+  # oc start-build --from-dir は .s2iignore を無視して target/ ごと tar にしてしまうため、
+  # アップロード前に target/ を削除する。
+  # BuildConfig の MAVEN_ARGS により OpenShift 上の openjdk-21 S2I イメージが Maven ビルドを実行する。
+  if [ -d "$ROOT_DIR/backend/target" ]; then
+    log_info "target/ を削除中（S2I アップロード前のクリーンアップ）..."
+    rm -rf "$ROOT_DIR/backend/target"
+    log_ok "target/ を削除しました"
+  fi
+
   log_info "S2I ビルドを開始中（S2I 内部で Maven ビルドを実行します）..."
   oc start-build migration-tool-backend \
     --from-dir="$ROOT_DIR/backend" \
