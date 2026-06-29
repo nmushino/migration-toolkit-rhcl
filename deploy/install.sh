@@ -56,6 +56,111 @@ create_namespace() {
   oc project "$NAMESPACE"
 }
 
+# ============================================================
+# Kuadrant / Istio 前提条件セットアップ
+# ============================================================
+setup_kuadrant_prerequisites() {
+  log_section "Kuadrant / Istio 前提条件セットアップ"
+
+  # 1. istio-system namespace
+  if oc get namespace istio-system &>/dev/null; then
+    log_warn "istio-system namespace は既に存在します"
+  else
+    oc create namespace istio-system
+    log_ok "istio-system namespace を作成しました"
+  fi
+
+  # 2. Istio CR (Sail Operator v1) — バージョンはクラスターに応じて自動選択
+  if oc get istio default &>/dev/null 2>&1; then
+    log_warn "Istio CR 'default' は既に存在します"
+  else
+    log_info "Istio CR を作成中..."
+    # サポートされているバージョンを自動取得（最新の v1.28 系を優先）
+    local istio_version
+    istio_version=$(oc get crd istios.sailoperator.io \
+      -o jsonpath='{.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.version.enum[0]}' \
+      2>/dev/null || echo "v1.28-latest")
+    log_info "Istio バージョン: ${istio_version}"
+
+    cat <<EOF | oc apply -f -
+apiVersion: sailoperator.io/v1
+kind: Istio
+metadata:
+  name: default
+spec:
+  version: ${istio_version}
+  namespace: istio-system
+EOF
+    log_ok "Istio CR を作成しました"
+  fi
+
+  # 3. istiod Pod が Ready になるまで待機（最大5分）
+  log_info "istiod の起動を待機中（最大5分）..."
+  local count=0
+  until oc get pods -n istio-system -l app=istiod --no-headers 2>/dev/null | grep -q "Running"; do
+    if [ $count -ge 30 ]; then
+      log_warn "istiod のタイムアウト。状態を確認してください: oc get pods -n istio-system"
+      break
+    fi
+    echo -n "."
+    sleep 10
+    ((count++))
+  done
+  echo ""
+
+  if oc get pods -n istio-system -l app=istiod --no-headers 2>/dev/null | grep -q "Running"; then
+    log_ok "istiod が起動しました"
+  fi
+
+  # 4. GatewayClass 確認
+  if oc get gatewayclass istio &>/dev/null 2>&1; then
+    log_ok "GatewayClass 'istio' が存在します"
+  else
+    log_warn "GatewayClass 'istio' がまだ作成されていません。istiod の起動後に自動作成されます。"
+  fi
+
+  # 5. kuadrant-system namespace
+  if oc get namespace kuadrant-system &>/dev/null; then
+    log_warn "kuadrant-system namespace は既に存在します"
+  else
+    oc create namespace kuadrant-system
+    log_ok "kuadrant-system namespace を作成しました"
+  fi
+
+  # 6. Kuadrant CR
+  if oc get kuadrant kuadrant -n kuadrant-system &>/dev/null 2>&1; then
+    log_warn "Kuadrant CR 'kuadrant' は既に存在します"
+  else
+    log_info "Kuadrant CR を作成中..."
+    cat <<EOF | oc apply -f -
+apiVersion: kuadrant.io/v1beta1
+kind: Kuadrant
+metadata:
+  name: kuadrant
+  namespace: kuadrant-system
+spec:
+  observability: {}
+EOF
+    log_ok "Kuadrant CR を作成しました"
+  fi
+
+  # 7. Kuadrant Ready 待機（最大3分）
+  log_info "Kuadrant の準備を待機中（最大3分）..."
+  count=0
+  until oc get kuadrant kuadrant -n kuadrant-system \
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; do
+    if [ $count -ge 18 ]; then
+      log_warn "Kuadrant のタイムアウト: oc get kuadrant -n kuadrant-system"
+      break
+    fi
+    echo -n "."
+    sleep 10
+    ((count++))
+  done
+  echo ""
+  log_ok "Kuadrant セットアップ完了"
+}
+
 # PostgreSQL オペレータインストール
 install_postgres_operator() {
   log_section "PostgreSQL オペレータインストール"
@@ -277,6 +382,7 @@ main() {
 
   check_prerequisites
   create_namespace
+  setup_kuadrant_prerequisites
   install_postgres_operator
   create_postgres_cluster
   deploy_backend
@@ -290,14 +396,19 @@ case "${1:-}" in
     echo "Usage: NAMESPACE=<ns> $0 [options]"
     echo ""
     echo "Options:"
-    echo "  --help          このヘルプを表示"
-    echo "  --backend-only  バックエンドのみデプロイ"
-    echo "  --frontend-only フロントエンドのみデプロイ"
-    echo "  --db-only       DBのみセットアップ"
+    echo "  --help              このヘルプを表示"
+    echo "  --kuadrant-only     Kuadrant / Istio 前提条件のみセットアップ"
+    echo "  --backend-only      バックエンドのみデプロイ"
+    echo "  --frontend-only     フロントエンドのみデプロイ"
+    echo "  --db-only           DBのみセットアップ"
     echo ""
     echo "Environment variables:"
     echo "  NAMESPACE  デプロイ先Namespace (デフォルト: migration-toolkit)"
     exit 0
+    ;;
+  --kuadrant-only)
+    check_prerequisites
+    setup_kuadrant_prerequisites
     ;;
   --backend-only)
     check_prerequisites

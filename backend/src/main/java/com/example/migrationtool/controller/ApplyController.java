@@ -8,6 +8,8 @@ import io.fabric8.kubernetes.client.dsl.base.PatchType;
 import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import jakarta.inject.Inject;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -133,7 +135,6 @@ public class ApplyController {
 
     /**
      * 古い apiVersion / スキーマ構造を kuadrant.io/v1 互換に正規化する。
-     * ZIP が旧バージョンで生成されていても適用できるようにする。
      *
      * apiVersion の置換:
      *   kuadrant.io/v1beta2 → kuadrant.io/v1
@@ -141,8 +142,11 @@ public class ApplyController {
      *   gateway.networking.k8s.io/v1beta1 → gateway.networking.k8s.io/v1
      *
      * AuthPolicy スキーマ変更 (v1beta2 → v1):
-     *   v1beta2: apiKey.credentials はネスト内
-     *   v1:      credentials は apiKey と同レベル (インデント1段浅い)
+     *   v1beta2: credentials は apiKey の内側 (子フィールド)
+     *   v1:      credentials は apiKey と同階層 (兄弟フィールド)
+     *
+     * 正規表現で任意のインデント幅に対応し、apiKey の直下にある credentials を
+     * apiKey と同じインデントレベルへ移動する。
      */
     private String normalizeApiVersion(String yaml) {
         String result = yaml
@@ -150,20 +154,68 @@ public class ApplyController {
                 .replace("apiVersion: kuadrant.io/v1beta1", "apiVersion: kuadrant.io/v1")
                 .replace("apiVersion: gateway.networking.k8s.io/v1beta1", "apiVersion: gateway.networking.k8s.io/v1");
 
-        // AuthPolicy v1beta2 → v1: credentials を apiKey の外（1段浅いインデント）に移動
-        // v1beta2 パターン: "          credentials:\n            authorizationHeader:"
-        // v1 パターン:      "        credentials:\n          authorizationHeader:"
-        result = result
-                .replace("          credentials:\n            authorizationHeader:",
-                         "        credentials:\n          authorizationHeader:")
-                .replace("          credentials:\n            cookie:",
-                         "        credentials:\n          cookie:")
-                .replace("          credentials:\n            customHeader:",
-                         "        credentials:\n          customHeader:")
-                .replace("          credentials:\n            queryString:",
-                         "        credentials:\n          queryString:");
+        // AuthPolicy v1beta2 → v1: apiKey 内の credentials を apiKey と同階層に移動
+        //
+        // マッチパターン例 (インデント幅は可変):
+        //   <N spaces>apiKey:\n
+        //     ... (selector 等の apiKey 子フィールド) ...
+        //   <N+2 spaces>credentials:\n
+        //     <N+4 spaces>(authorizationHeader|cookie|customHeader|queryString):\n
+        //
+        // → credentials ブロック全体を apiKey の外（N スペース）に移す。
+        //
+        // アルゴリズム:
+        //   1. "^(\s+)apiKey:" 行を見つける → その空白数 = apiKeyIndent
+        //   2. credentials が apiKeyIndent+2 スペースで始まっていれば内側にある
+        //   3. credentials ブロック（credentials 行 + 子行）を抽出し、
+        //      apiKeyIndent スペースのインデントに付け直して apiKey ブロックの後ろに移動
+        result = moveCredentialsOutOfApiKey(result);
 
         return result;
+    }
+
+    /**
+     * YAML 文字列内で apiKey の子になっている credentials フィールドを
+     * apiKey と同階層（兄弟）に移動する。
+     * インデント幅に依存しない行単位の処理。
+     */
+    private String moveCredentialsOutOfApiKey(String yaml) {
+        // Pattern: apiKey: が出現し、その直後のフィールドに credentials がある場合を検出
+        // credentials が authorizationHeader/cookie/customHeader/queryString/header を持つ行を対象
+        Pattern pattern = Pattern.compile(
+            "(?m)(^([ \\t]+)apiKey:\\n" +           // group1=apiKeyLine+newline, group2=apiKeyIndent
+            "(?:\\2[ \\t]+(?!credentials:).*\\n)*)" + // apiKey の子フィールド(credentials以外)
+            "(\\2[ \\t]+credentials:\\n" +           // group3=credentials行(apiKeyより深いインデント)
+            "(?:\\2[ \\t]{2,}.*\\n)*)"               // credentials の子フィールド
+        );
+
+        Matcher m = pattern.matcher(yaml);
+        if (!m.find()) {
+            return yaml; // パターン未マッチ → 変換不要
+        }
+
+        StringBuffer sb = new StringBuffer();
+        m.reset();
+        while (m.find()) {
+            String apiKeyBlock      = m.group(1); // apiKey: + その子行
+            String apiKeyIndent     = m.group(2); // apiKey のインデント文字列
+            String credentialsBlock = m.group(3); // credentials: + その子行
+
+            // credentials ブロックの各行から余分なインデント(2文字分)を除去して
+            // apiKey と同じインデントレベルに揃える
+            String fixedCredentials = credentialsBlock.lines()
+                .map(line -> {
+                    // apiKeyIndent より 2文字深いインデントがあれば 2文字削る
+                    String deeper = apiKeyIndent + "  ";
+                    return line.startsWith(deeper) ? apiKeyIndent + line.substring(deeper.length()) : line;
+                })
+                .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
+
+            // apiKey ブロックの後に credentials を付ける（apiKey と同階層）
+            m.appendReplacement(sb, Matcher.quoteReplacement(apiKeyBlock + fixedCredentials));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     /**
