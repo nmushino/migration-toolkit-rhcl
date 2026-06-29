@@ -203,10 +203,21 @@ deploy_frontend() {
   log_ok "フロントエンドリソースを適用しました"
 
   # ローカルで Vite ビルド（OOMKill 回避のため S2I 内ではビルドしない）
+  # Vite 5 は Node 18+ 必須。nvm 環境では Node 20 を優先的に使用する。
+  local NODE_BIN="node"
+  for v in 20 22 18; do
+    local candidate="$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node/" 2>/dev/null | grep "^v${v}\." | sort -V | tail -1)/bin/node"
+    if [ -x "$candidate" ]; then
+      NODE_BIN="$candidate"
+      log_info "Node.js: $($NODE_BIN --version) を使用 ($candidate)"
+      break
+    fi
+  done
+
   log_info "npm install & vite build を実行中..."
   (cd "$ROOT_DIR/frontend" && \
-    npm install --legacy-peer-deps --silent && \
-    VITE_API_URL="$backend_url" npm run build)
+    "$NODE_BIN" "$(dirname "$NODE_BIN")/npm" install --legacy-peer-deps --silent && \
+    VITE_API_URL="$backend_url" "$NODE_BIN" "$(dirname "$NODE_BIN")/npx" vite build)
   log_ok "Vite ビルド完了"
 
   # nginx 設定ファイルを build/ に配置
