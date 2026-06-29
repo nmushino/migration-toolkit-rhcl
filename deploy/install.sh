@@ -228,8 +228,9 @@ deploy_frontend() {
   log_ok "Vite ビルド完了"
 
   # nginx 設定ファイルを build/ に配置
-  mkdir -p "$ROOT_DIR/frontend/build/.nginx"
-  cp "$ROOT_DIR/frontend/nginx/nginx.conf" "$ROOT_DIR/frontend/build/.nginx/nginx.conf"
+  # nginx-default-cfg/ に API プロキシ設定を配置（S2I が /opt/app-root/etc/nginx.default.d/ にコピーする）
+  mkdir -p "$ROOT_DIR/frontend/build/nginx-default-cfg"
+  cp "$ROOT_DIR/frontend/nginx-default-cfg/api-proxy.conf" "$ROOT_DIR/frontend/build/nginx-default-cfg/api-proxy.conf"
 
   # S2I バイナリビルド: ビルド済み静的ファイルを nginx イメージに載せる
   log_info "S2I フロントエンドビルドを開始中..."
