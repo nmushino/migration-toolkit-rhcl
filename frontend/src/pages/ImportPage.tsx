@@ -168,10 +168,15 @@ const ImportPageInner: React.FC = () => {
     const f = e.dataTransfer.files[0]; if (f) handleFile(f);
   };
 
+  const normalizeApiVersions = (yaml: string) => yaml
+    .replace(/apiVersion: kuadrant\.io\/v1beta2/g, 'apiVersion: kuadrant.io/v1')
+    .replace(/apiVersion: kuadrant\.io\/v1beta1/g, 'apiVersion: kuadrant.io/v1')
+    .replace(/apiVersion: gateway\.networking\.k8s\.io\/v1beta1/g, 'apiVersion: gateway.networking.k8s.io/v1');
+
   const applyNamespace = () => {
     const updated: EditMap = {};
     files.forEach(f => {
-      updated[f.name] = (edits[f.name] ?? f.content)
+      updated[f.name] = normalizeApiVersions(edits[f.name] ?? f.content)
         .replace(/^(\s*namespace:\s*).+$/gm, `$1${namespace}`);
     });
     setEdits(updated);
