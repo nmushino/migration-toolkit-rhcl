@@ -2,10 +2,10 @@ package com.example.migrationtool.controller;
 
 import com.example.migrationtool.util.Messages;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
-import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.base.PatchContext;
 import io.fabric8.kubernetes.client.dsl.base.PatchType;
+import io.fabric8.kubernetes.client.utils.Serialization;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -14,9 +14,8 @@ import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -54,37 +53,44 @@ public class ApplyController {
         boolean anySuccess = false;
         boolean anyError = false;
 
+        // SERVER_SIDE_APPLY パッチコンテキスト（全リソース共通）
+        PatchContext ctx = new PatchContext.Builder()
+                .withPatchType(PatchType.SERVER_SIDE_APPLY)
+                .withFieldManager("migration-toolkit")
+                .withForce(true)
+                .build();
+
         for (Map.Entry<String, String> entry : request.files().entrySet()) {
             String fileName = entry.getKey();
             String yaml = entry.getValue();
             try {
-                byte[] bytes = yaml.getBytes(StandardCharsets.UTF_8);
-                List<HasMetadata> items;
-                try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes)) {
-                    items = client.load(bis).items();
-                }
+                // client.load() は内部で Handlers.getRegisteredKubernetesResource() を呼び、
+                // AuthPolicy など未登録 CRD で "Could not find a registered handler" を投げる。
+                // 回避策: Serialization.unmarshal() で強制的に GenericKubernetesResource として
+                // デシリアライズし、genericKubernetesResources() DSL のみで適用する。
+                // これにより Handlers は一切呼ばれない。
+                List<GenericKubernetesResource> items = splitYamlDocs(yaml).stream()
+                        .filter(doc -> !doc.isBlank())
+                        .map(doc -> Serialization.unmarshal(doc, GenericKubernetesResource.class))
+                        .filter(gkr -> gkr != null && gkr.getKind() != null)
+                        .toList();
+
                 List<String> errors = new ArrayList<>();
-                for (HasMetadata item : items) {
-                    String kind = item.getKind();
-                    String name = item.getMetadata().getName();
+                for (GenericKubernetesResource gkr : items) {
+                    String kind = gkr.getKind();
+                    String name = gkr.getMetadata() != null ? gkr.getMetadata().getName() : "unknown";
+                    // namespace: YAML内の指定を優先、なければリクエストの namespace を使用
+                    String ns = (gkr.getMetadata() != null
+                            && gkr.getMetadata().getNamespace() != null
+                            && !gkr.getMetadata().getNamespace().isBlank())
+                            ? gkr.getMetadata().getNamespace()
+                            : namespace;
                     try {
-                        if (item instanceof GenericKubernetesResource gkr) {
-                            // 未登録CRD（AuthPolicy など）:
-                            // serverSideApply() は内部で Handlers を呼ぶため使えない。
-                            // PatchType.SERVER_SIDE_APPLY を直接指定して Handlers をバイパスする。
-                            PatchContext ctx = new PatchContext.Builder()
-                                    .withPatchType(PatchType.SERVER_SIDE_APPLY)
-                                    .withFieldManager("migration-toolkit")
-                                    .withForce(true)
-                                    .build();
-                            client.genericKubernetesResources(gkr.getApiVersion(), gkr.getKind())
-                                    .inNamespace(namespace)
-                                    .withName(gkr.getMetadata().getName())
-                                    .patch(ctx, gkr);
-                        } else {
-                            client.resource(item).inNamespace(namespace).serverSideApply();
-                        }
-                        LOG.infof("Applied %s/%s to namespace %s", kind, name, namespace);
+                        client.genericKubernetesResources(gkr.getApiVersion(), kind)
+                                .inNamespace(ns)
+                                .withName(name)
+                                .patch(ctx, gkr);
+                        LOG.infof("Applied %s/%s to namespace %s", kind, name, ns);
                     } catch (Exception ex) {
                         String itemMsg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
                         LOG.warnf("Failed to apply %s/%s: %s", kind, name, itemMsg);
@@ -113,5 +119,10 @@ public class ApplyController {
                 "successCount", results.stream().filter(ApplyResult::success).count(),
                 "errorCount", results.stream().filter(r -> !r.success()).count()
         )).build();
+    }
+
+    /** マルチドキュメント YAML を "---" で分割して個々のドキュメント文字列リストを返す。 */
+    private List<String> splitYamlDocs(String yaml) {
+        return Arrays.asList(yaml.split("(?m)^---\\s*$"));
     }
 }
