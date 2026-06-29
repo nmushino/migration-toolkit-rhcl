@@ -26,7 +26,7 @@ log_section() { echo -e "\n${BLUE}====== $* ======${NC}"; }
 check_prerequisites() {
   log_section "前提条件チェック"
 
-  for cmd in oc mvn node npm; do
+  for cmd in oc node npm; do
     if command -v "$cmd" &>/dev/null; then
       log_ok "$cmd が見つかりました: $(command -v $cmd)"
     else
@@ -155,13 +155,11 @@ deploy_backend() {
   done
   log_ok "バックエンドリソースを適用しました"
 
-  # Maven ビルド
-  log_info "Maven ビルドを実行中..."
-  (cd "$ROOT_DIR/backend" && mvn clean package -DskipTests -q)
-  log_ok "Maven ビルド完了"
-
-  # S2I バイナリビルド
-  log_info "S2I ビルドを開始中..."
+  # S2I バイナリビルド（ソースコードを送信し、S2I 側で Maven ビルドを実行）
+  # BuildConfig の MAVEN_ARGS="package -DskipTests -Dquarkus.package.type=fast-jar" により
+  # OpenShift 上の openjdk-21 S2I イメージが Maven ビルドを行う。
+  # target/ は .s2iignore で除外済みのためアップロードエラーが発生しない。
+  log_info "S2I ビルドを開始中（S2I 内部で Maven ビルドを実行します）..."
   oc start-build migration-tool-backend \
     --from-dir="$ROOT_DIR/backend" \
     --follow \
