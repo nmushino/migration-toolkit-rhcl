@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Component, ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from './i18n';
@@ -35,6 +35,55 @@ import HistoryPage from './pages/HistoryPage';
 import ImportPage from './pages/ImportPage';
 
 import { ConnectionRequest, ApiService, ConversionResultItem } from './api/types';
+
+/* ── ルートレベル Error Boundary ──
+   いずれかのページコンポーネントがクラッシュしても
+   ナビゲーション（サイドバー・マストヘッド）は消えない。 */
+interface EBState { hasError: boolean; message: string; path: string; }
+class RouteErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+  state: EBState = { hasError: false, message: '', path: '' };
+  static getDerivedStateFromError(e: Error): Partial<EBState> {
+    return { hasError: true, message: e.message };
+  }
+  componentDidCatch(e: Error, info: ErrorInfo) {
+    console.error('[RouteErrorBoundary]', e, info);
+    this.setState({ path: window.location.pathname });
+  }
+  componentDidUpdate(_: unknown, prev: EBState) {
+    if (prev.path && window.location.pathname !== prev.path) {
+      this.setState({ hasError: false, message: '', path: '' });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '32px' }}>
+          <div style={{
+            background: '#fff1f1', border: '1px solid #c9190b', borderRadius: '6px',
+            padding: '20px 24px',
+          }}>
+            <p style={{ margin: 0, fontWeight: 700, color: '#c9190b', fontSize: '15px' }}>
+              ページの表示中にエラーが発生しました
+            </p>
+            <p style={{ margin: '8px 0 0', fontFamily: 'monospace', fontSize: '13px', color: '#3c3f42', wordBreak: 'break-word' }}>
+              {this.state.message}
+            </p>
+            <button
+              onClick={() => this.setState({ hasError: false, message: '', path: '' })}
+              style={{
+                marginTop: '14px', padding: '6px 16px', fontSize: '13px', cursor: 'pointer',
+                background: '#c9190b', color: '#fff', border: 'none', borderRadius: '4px',
+              }}
+            >
+              再試行
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export interface AppState {
   connection: ConnectionRequest & { connected: boolean };
@@ -307,17 +356,19 @@ const AppContent: React.FC = () => {
         isManagedSidebar={false}
         style={{ flex: 1, minHeight: 0 }}
       >
-        <Routes>
-          <Route path="/" element={<ConnectionPage appState={appState} setAppState={setAppState} />} />
-          <Route path="/services" element={<APISelectionPage appState={appState} setAppState={setAppState} />} />
-          <Route path="/compatibility" element={<CompatibilityPage appState={appState} setAppState={setAppState} />} />
-          <Route path="/convert" element={<ConversionPage appState={appState} setAppState={setAppState} />} />
-          <Route path="/yaml" element={<YAMLViewerPage appState={appState} setAppState={setAppState} />} />
-          <Route path="/validate" element={<ValidationPage appState={appState} setAppState={setAppState} />} />
-          <Route path="/download" element={<DownloadPage appState={appState} setAppState={setAppState} />} />
-          <Route path="/import" element={<ImportPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-        </Routes>
+        <RouteErrorBoundary>
+          <Routes>
+            <Route path="/" element={<ConnectionPage appState={appState} setAppState={setAppState} />} />
+            <Route path="/services" element={<APISelectionPage appState={appState} setAppState={setAppState} />} />
+            <Route path="/compatibility" element={<CompatibilityPage appState={appState} setAppState={setAppState} />} />
+            <Route path="/convert" element={<ConversionPage appState={appState} setAppState={setAppState} />} />
+            <Route path="/yaml" element={<YAMLViewerPage appState={appState} setAppState={setAppState} />} />
+            <Route path="/validate" element={<ValidationPage appState={appState} setAppState={setAppState} />} />
+            <Route path="/download" element={<DownloadPage appState={appState} setAppState={setAppState} />} />
+            <Route path="/import" element={<ImportPage />} />
+            <Route path="/history" element={<HistoryPage />} />
+          </Routes>
+        </RouteErrorBoundary>
       </Page>
       <Footer />
     </div>
