@@ -115,7 +115,7 @@ spec:
                     ? service.authentication.oidcIssuerEndpoint
                     : "https://your-oidc-provider/realms/your-realm";
             return """
-apiVersion: kuadrant.io/v1beta2
+apiVersion: kuadrant.io/v1
 kind: AuthPolicy
 metadata:
   name: %s-auth
@@ -136,7 +136,7 @@ spec:
 """.formatted(name, namespace, name, name, issuer);
         } else if ("apiKey".equals(authType)) {
             return """
-apiVersion: kuadrant.io/v1beta2
+apiVersion: kuadrant.io/v1
 kind: AuthPolicy
 metadata:
   name: %s-auth
@@ -163,7 +163,7 @@ spec:
         }
 
         return """
-apiVersion: kuadrant.io/v1beta2
+apiVersion: kuadrant.io/v1
 kind: AuthPolicy
 metadata:
   name: %s-auth

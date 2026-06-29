@@ -13,6 +13,7 @@ public class ValidationService {
     private static final Set<String> KNOWN_CRDS = Set.of(
             "gateway.networking.k8s.io/v1",
             "gateway.networking.k8s.io/v1beta1",
+            "kuadrant.io/v1",
             "kuadrant.io/v1beta2",
             "kuadrant.io/v1alpha1",
             "v1"
