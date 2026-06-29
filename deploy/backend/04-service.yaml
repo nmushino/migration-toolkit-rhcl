@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: migration-tool-backend
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: migration-tool
+    component: backend
+spec:
+  selector:
+    app: migration-tool
+    component: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP

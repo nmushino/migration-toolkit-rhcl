@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: migration-tool-backend
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: migration-tool
+    component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: migration-tool
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: migration-tool
+        component: backend
+    spec:
+      serviceAccountName: migration-tool-backend
+      containers:
+        - name: backend
+          image: image-registry.openshift-image-registry.svc:5000/migration-toolkit/migration-tool-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: migration-tool-db-pguser-migrationtool
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: migration-tool-db-pguser-migrationtool
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: migration-tool-db-pguser-migrationtool
+                  key: dbname
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: migration-tool-db-pguser-migrationtool
+                  key: user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: migration-tool-db-pguser-migrationtool
+                  key: password
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"

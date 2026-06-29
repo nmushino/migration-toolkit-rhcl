@@ -1,0 +1,40 @@
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+.mvn/
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Node / npm
+node_modules/
+dist/
+build/
+.vite/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Quarkus dev
+.quarkus/
+**/generated-sources/
+**/generated-test-sources/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Logs
+*.log
+logs/

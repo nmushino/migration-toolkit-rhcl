@@ -1,0 +1,11 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: migration-tool-frontend
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: migration-tool
+    component: frontend
+spec:
+  lookupPolicy:
+    local: false

@@ -1,0 +1,27 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: migration-tool-backend
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: migration-tool
+    component: backend
+spec:
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Source
+    sourceStrategy:
+      from:
+        kind: DockerImage
+        name: registry.access.redhat.com/ubi9/openjdk-21
+      env:
+        - name: MAVEN_ARGS
+          value: "package -DskipTests -Dquarkus.package.type=fast-jar"
+  output:
+    to:
+      kind: ImageStreamTag
+      name: migration-tool-backend:latest
+  triggers:
+    - type: ConfigChange

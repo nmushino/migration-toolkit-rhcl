@@ -1,0 +1,14 @@
+# openshift-operators Namespace には OLM が作成したグローバル OperatorGroup が
+# 既に存在するため OperatorGroup は作成しない。
+# 追加すると "already exists" エラーになり CSV / InstallPlan が生成されない。
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: crunchy-postgres-operator
+  namespace: openshift-operators
+spec:
+  channel: v5
+  name: crunchy-postgres-operator
+  source: certified-operators
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic

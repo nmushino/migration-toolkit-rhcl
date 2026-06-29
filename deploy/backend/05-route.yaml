@@ -1,0 +1,17 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: migration-tool-backend
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: migration-tool
+    component: backend
+spec:
+  to:
+    kind: Service
+    name: migration-tool-backend
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

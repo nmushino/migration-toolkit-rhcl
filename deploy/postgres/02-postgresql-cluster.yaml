@@ -1,0 +1,32 @@
+apiVersion: postgres-operator.crunchydata.com/v1beta1
+kind: PostgresCluster
+metadata:
+  name: migration-tool-db
+  namespace: NAMESPACE_PLACEHOLDER
+spec:
+  postgresVersion: 16
+  instances:
+    - name: instance1
+      replicas: 1
+      dataVolumeClaimSpec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+  backups:
+    pgbackrest:
+      repos:
+        - name: repo1
+          volume:
+            volumeClaimSpec:
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 5Gi
+  users:
+    - name: migrationtool
+      databases:
+        - migrationtool
+      options: "SUPERUSER"
