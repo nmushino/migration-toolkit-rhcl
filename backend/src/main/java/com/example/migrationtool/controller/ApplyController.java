@@ -70,7 +70,7 @@ public class ApplyController {
                 // 回避策: Serialization.unmarshal() で強制的に GenericKubernetesResource として
                 // デシリアライズし、genericKubernetesResources() DSL のみで適用する。
                 // これにより Handlers は一切呼ばれない。
-                List<GenericKubernetesResource> items = splitYamlDocs(yaml).stream()
+                List<GenericKubernetesResource> items = splitYamlDocs(normalizeApiVersion(yaml)).stream()
                         .filter(doc -> !doc.isBlank())
                         .map(doc -> Serialization.unmarshal(doc, GenericKubernetesResource.class))
                         .filter(gkr -> gkr != null && gkr.getKind() != null)
@@ -129,6 +129,20 @@ public class ApplyController {
     /** マルチドキュメント YAML を "---" で分割して個々のドキュメント文字列リストを返す。 */
     private List<String> splitYamlDocs(String yaml) {
         return Arrays.asList(yaml.split("(?m)^---\\s*$"));
+    }
+
+    /**
+     * 古い apiVersion を現行バージョンへ正規化する。
+     * ZIP が旧バージョンで生成されていても適用できるようにする。
+     *   kuadrant.io/v1beta2 → kuadrant.io/v1
+     *   kuadrant.io/v1beta1 → kuadrant.io/v1
+     *   gateway.networking.k8s.io/v1beta1 → gateway.networking.k8s.io/v1
+     */
+    private String normalizeApiVersion(String yaml) {
+        return yaml
+                .replace("apiVersion: kuadrant.io/v1beta2", "apiVersion: kuadrant.io/v1")
+                .replace("apiVersion: kuadrant.io/v1beta1", "apiVersion: kuadrant.io/v1")
+                .replace("apiVersion: gateway.networking.k8s.io/v1beta1", "apiVersion: gateway.networking.k8s.io/v1");
     }
 
     /**
