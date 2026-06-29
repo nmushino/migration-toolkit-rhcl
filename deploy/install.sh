@@ -64,6 +64,12 @@ install_postgres_operator() {
   # 重複 OperatorGroup があると OLM が CSV/InstallPlan を生成しないため
   # Subscription のみ apply する。
 
+  # SCC 適用（fsGroup:26 + seccomp を許可 / OpenShift 4.12+ 対応）
+  log_info "CrunchyData 用 SCC (crunchy-postgres) を適用しています..."
+  sed "s/NAMESPACE_PLACEHOLDER/$NAMESPACE/g" \
+    "$SCRIPT_DIR/postgres/03-postgresql-scc.yaml" | oc apply -f -
+  log_ok "SCC を適用しました"
+
   if oc get subscription crunchy-postgres-operator -n openshift-operators &>/dev/null; then
     log_warn "CrunchyData PostgreSQL オペレータは既にインストール済みです"
   else
@@ -142,6 +148,7 @@ create_postgres_cluster() {
   else
     log_warn "PostgreSQL シークレットがまだ作成されていません。しばらく待ってください。"
   fi
+
 }
 
 # バックエンドビルド&デプロイ
