@@ -132,17 +132,38 @@ public class ApplyController {
     }
 
     /**
-     * 古い apiVersion を現行バージョンへ正規化する。
+     * 古い apiVersion / スキーマ構造を kuadrant.io/v1 互換に正規化する。
      * ZIP が旧バージョンで生成されていても適用できるようにする。
+     *
+     * apiVersion の置換:
      *   kuadrant.io/v1beta2 → kuadrant.io/v1
      *   kuadrant.io/v1beta1 → kuadrant.io/v1
      *   gateway.networking.k8s.io/v1beta1 → gateway.networking.k8s.io/v1
+     *
+     * AuthPolicy スキーマ変更 (v1beta2 → v1):
+     *   v1beta2: apiKey.credentials はネスト内
+     *   v1:      credentials は apiKey と同レベル (インデント1段浅い)
      */
     private String normalizeApiVersion(String yaml) {
-        return yaml
+        String result = yaml
                 .replace("apiVersion: kuadrant.io/v1beta2", "apiVersion: kuadrant.io/v1")
                 .replace("apiVersion: kuadrant.io/v1beta1", "apiVersion: kuadrant.io/v1")
                 .replace("apiVersion: gateway.networking.k8s.io/v1beta1", "apiVersion: gateway.networking.k8s.io/v1");
+
+        // AuthPolicy v1beta2 → v1: credentials を apiKey の外（1段浅いインデント）に移動
+        // v1beta2 パターン: "          credentials:\n            authorizationHeader:"
+        // v1 パターン:      "        credentials:\n          authorizationHeader:"
+        result = result
+                .replace("          credentials:\n            authorizationHeader:",
+                         "        credentials:\n          authorizationHeader:")
+                .replace("          credentials:\n            cookie:",
+                         "        credentials:\n          cookie:")
+                .replace("          credentials:\n            customHeader:",
+                         "        credentials:\n          customHeader:")
+                .replace("          credentials:\n            queryString:",
+                         "        credentials:\n          queryString:");
+
+        return result;
     }
 
     /**

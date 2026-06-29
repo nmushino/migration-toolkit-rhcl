@@ -156,9 +156,9 @@ spec:
           selector:
             matchLabels:
               app: %s
-          credentials:
-            authorizationHeader:
-              prefix: APIKEY
+        credentials:
+          authorizationHeader:
+            prefix: APIKEY
 """.formatted(name, namespace, name, name, name);
         }
 
