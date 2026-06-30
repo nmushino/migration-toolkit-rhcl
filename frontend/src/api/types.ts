@@ -104,11 +104,25 @@ export interface ValidationResult {
   items: ValidationItem[];
 }
 
+export interface FailureDetail {
+  fileName: string;
+  kind: string;
+  name: string;
+  error: string;
+}
+
 export interface ConversionHistory {
   id: number;
-  serviceId: string;
-  serviceName: string;
+  serviceId?: string;
+  serviceName?: string;
   status: string;
   compatibilityScore?: number;
+  source?: string;        // CONVERT | IMPORT
+  namespace?: string;
+  totalCount?: number;
+  successCount?: number;
+  failureCount?: number;
+  failureDetails?: string; // JSON string of FailureDetail[]
+  exportedYaml?: string;
   createdAt: string;
 }

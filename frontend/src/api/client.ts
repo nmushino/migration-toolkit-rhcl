@@ -43,8 +43,8 @@ export const downloadApi = {
 };
 
 export const applyApi = {
-  apply: (namespace: string, files: Record<string, string>) =>
-    api.post('/api/apply', { namespace, files }),
+  apply: (namespace: string, files: Record<string, string>, source = 'CONVERT') =>
+    api.post('/api/apply', { namespace, files, source }),
 };
 
 export const importApi = {
@@ -67,7 +67,9 @@ export const historyApi = {
     api.get('/api/history', { params: { page, size } }),
   get: (id: number) => api.get(`/api/history/${id}`),
   downloadZip: (id: number) =>
-    api.get(`/api/download/history/${id}`, { responseType: 'blob' }),
+    api.get(`/api/history/${id}/download`, { responseType: 'blob' }),
+  deleteByIds: (ids: number[]) =>
+    api.delete('/api/history', { data: ids }),
 };
 
 export default api;

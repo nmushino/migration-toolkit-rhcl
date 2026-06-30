@@ -26,6 +26,30 @@ public class ConversionHistoryEntity extends PanacheEntity {
     @Column(name = "yaml_content", columnDefinition = "TEXT")
     public String yamlContent;
 
+    /** CONVERT（変換フロー）または IMPORT（ZIP インポート） */
+    @Column(name = "source", length = 20)
+    public String source = "CONVERT";
+
+    @Column(name = "namespace")
+    public String namespace;
+
+    @Column(name = "total_count")
+    public Integer totalCount;
+
+    @Column(name = "success_count")
+    public Integer successCount;
+
+    @Column(name = "failure_count")
+    public Integer failureCount;
+
+    /** JSON: [{fileName, resourceKind, resourceName, error}] */
+    @Column(name = "failure_details", columnDefinition = "TEXT")
+    public String failureDetails;
+
+    /** JSON: {filename: yamlContent} — cluster から export した実リソース YAML */
+    @Column(name = "exported_yaml", columnDefinition = "TEXT")
+    public String exportedYaml;
+
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt = LocalDateTime.now();
 

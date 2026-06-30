@@ -98,6 +98,7 @@ const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) =>
   const [copied, setCopied]         = useState<string | null>(null);
   const [apiKeyValue, setApiKeyValue] = useState('your-api-key');
   const [jwtValue, setJwtValue]       = useState('your-jwt-token');
+  const [customPath, setCustomPath]   = useState('');
 
   const fetchGatewayUrl = useCallback(async () => {
     if (!testInfo.gatewayName || !namespace) return;
@@ -130,9 +131,10 @@ const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) =>
 
   const buildCurl = (route: RouteInfo): string => {
     const base = gatewayUrl ?? 'http://<GATEWAY_URL>';
+    const path = customPath.trim() || route.path;
     const auth = buildAuthHeader();
     const methodFlag = route.method !== 'GET' ? ` -X ${route.method}` : '';
-    return `curl${methodFlag}${auth ? ' ' + auth : ''} "${base}${route.path}"`;
+    return `curl${methodFlag}${auth ? ' ' + auth : ''} "${base}${path}"`;
   };
 
   const copyToClipboard = (text: string, key: string) => {
@@ -225,6 +227,15 @@ const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) =>
         {/* curl コマンド */}
         <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 6, border: '1px solid #d2d2d2' }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>curl テストコマンド</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>追加パス</span>
+            <TextInput
+              value={customPath}
+              onChange={(_e, v) => setCustomPath(v)}
+              placeholder="/api/your/path"
+              style={{ flex: 1, fontSize: 13 }}
+            />
+          </div>
           {testInfo.routes.map((route, i) => {
             const cmd = buildCurl(route);
             const key = `curl-${i}`;
@@ -484,7 +495,7 @@ const ImportPageInner: React.FC = () => {
     const yamlFiles: Record<string, string> = {};
     files.forEach(f => { yamlFiles[f.name] = edits[f.name] ?? f.content; });
     try {
-      const res = await applyApi.apply(namespace, yamlFiles);
+      const res = await applyApi.apply(namespace, yamlFiles, 'IMPORT');
       const results: ApplyResult[] = res.data?.results ?? [];
       setApplyResults(results);
       // 1件以上成功した場合にテスト情報パネルを表示

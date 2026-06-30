@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   PageSection,
   PageSectionVariants,
@@ -12,24 +12,24 @@ import {
   EmptyState,
   EmptyStateIcon,
   EmptyStateBody,
-  Toolbar,
-  ToolbarContent,
-  ToolbarItem,
   Badge,
+  Checkbox,
+  Modal,
+  ModalVariant,
 } from '@patternfly/react-core';
-import { HistoryIcon, DownloadIcon, CubesIcon } from '@patternfly/react-icons';
+import {
+  HistoryIcon,
+  DownloadIcon,
+  CubesIcon,
+  TrashIcon,
+  AngleRightIcon,
+  AngleDownIcon,
+  ExclamationCircleIcon,
+  CheckCircleIcon,
+} from '@patternfly/react-icons';
 import { useTranslation } from 'react-i18next';
 import { historyApi } from '../api/client';
-import { ConversionHistory } from '../api/types';
-
-const statusColor = (status: string): 'green' | 'red' | 'orange' | 'blue' => {
-  switch (status?.toUpperCase()) {
-    case 'COMPLETED': return 'green';
-    case 'FAILED':    return 'red';
-    case 'IN_PROGRESS': return 'orange';
-    default:          return 'blue';
-  }
-};
+import { ConversionHistory, FailureDetail } from '../api/types';
 
 const formatDate = (iso: string, locale: string): string => {
   try {
@@ -37,192 +37,345 @@ const formatDate = (iso: string, locale: string): string => {
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     });
-  } catch {
-    return iso;
+  } catch { return iso; }
+};
+
+const statusColor = (status: string): 'green' | 'red' | 'orange' | 'blue' => {
+  switch (status?.toUpperCase()) {
+    case 'COMPLETED': return 'green';
+    case 'FAILED':    return 'red';
+    case 'PARTIAL':   return 'orange';
+    default:          return 'blue';
   }
 };
 
-const HistoryPage: React.FC = () => {
-  const { t, i18n } = useTranslation();
-  const [history, setHistory] = useState<ConversionHistory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState<Record<number, boolean>>({});
-  const [downloadError, setDownloadError] = useState<string | null>(null);
+const sourceLabel = (source?: string) => {
+  if (source === 'IMPORT') return <Label isCompact color="purple">ZIP Import</Label>;
+  if (source === 'CONVERT') return <Label isCompact color="blue">Convert</Label>;
+  return <Label isCompact color="grey">{source ?? '—'}</Label>;
+};
 
-  useEffect(() => {
+const HistoryPage: React.FC = () => {
+  const { i18n } = useTranslation();
+  const [history, setHistory]         = useState<ConversionHistory[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const [selected, setSelected]       = useState<Set<number>>(new Set());
+  const [expanded, setExpanded]       = useState<Set<number>>(new Set());
+  const [downloading, setDownloading] = useState<Record<number, boolean>>({});
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleting, setDeleting]       = useState(false);
+  const [toast, setToast]             = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
     historyApi.list()
-      .then(r => {
-        const data = Array.isArray(r.data) ? r.data : [];
-        setHistory(data);
-      })
-      .catch(e => setError(t('history.loadError', { message: e.message })))
+      .then(r => setHistory(Array.isArray(r.data) ? r.data : []))
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selected.size === history.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(history.map(h => h.id)));
+    }
+  };
+
+  const toggleExpand = (id: number) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
   const handleDownload = async (entry: ConversionHistory) => {
     setDownloading(prev => ({ ...prev, [entry.id]: true }));
-    setDownloadError(null);
     try {
       const resp = await historyApi.downloadZip(entry.id);
       const blob = new Blob([resp.data], { type: 'application/zip' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const safeName = (entry.serviceName || 'service')
-        .toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      const dateStr = new Date(entry.createdAt)
-        .toISOString().slice(0, 16).replace(/[T:]/g, '-');
+      const dateStr = new Date(entry.createdAt).toISOString().slice(0, 16).replace(/[T:]/g, '-');
       link.href = url;
-      link.download = `${safeName}-${dateStr}.zip`;
+      link.download = `history-${entry.id}-${dateStr}.zip`;
       link.click();
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
-      setDownloadError(t('history.downloadError', { message: e.message }));
+      showToast(`ダウンロードエラー: ${e.message}`);
     } finally {
       setDownloading(prev => ({ ...prev, [entry.id]: false }));
     }
   };
 
-  const statusLabel = (status: string) => {
-    const key = status?.toUpperCase();
-    if (key === 'COMPLETED') return t('history.statusCompleted');
-    if (key === 'FAILED')    return t('history.statusFailed');
-    if (key === 'IN_PROGRESS') return t('history.statusInProgress');
-    return status;
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await historyApi.deleteByIds(Array.from(selected));
+      setSelected(new Set());
+      setDeleteModal(false);
+      showToast(`${selected.size} 件を削除しました`);
+      load();
+    } catch (e: any) {
+      showToast(`削除エラー: ${e.message}`);
+    } finally {
+      setDeleting(false);
+    }
   };
+
+  const parseFailures = (json?: string): FailureDetail[] => {
+    if (!json) return [];
+    try { return JSON.parse(json); } catch { return []; }
+  };
+
+  const allChecked = history.length > 0 && selected.size === history.length;
+  const someChecked = selected.size > 0 && selected.size < history.length;
 
   return (
     <>
+      {/* トースト通知 */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 16, right: 16, zIndex: 9999,
+          background: '#151515', color: '#fff', padding: '10px 18px',
+          borderRadius: 6, fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        }}>
+          {toast}
+        </div>
+      )}
+
       <PageSection variant={PageSectionVariants.light}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <HistoryIcon style={{ fontSize: '1.8rem', color: '#6a6e73' }} />
-          <div>
-            <Title headingLevel="h1" size="2xl">{t('history.title')}</Title>
-            <p style={{ margin: '4px 0 0', color: '#6a6e73', fontSize: '14px' }}>
-              {t('history.description')}
-            </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <HistoryIcon style={{ fontSize: '1.8rem', color: '#6a6e73' }} />
+            <div>
+              <Title headingLevel="h1" size="2xl">変換・適用履歴</Title>
+              <p style={{ margin: '4px 0 0', color: '#6a6e73', fontSize: '14px' }}>
+                ZIP インポートおよび変換フローの実行結果
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {selected.size > 0 && (
+              <Button
+                variant="danger"
+                icon={<TrashIcon />}
+                onClick={() => setDeleteModal(true)}
+              >
+                選択削除 ({selected.size})
+              </Button>
+            )}
+            <Button variant="secondary" onClick={load} isDisabled={loading}>
+              再読み込み
+            </Button>
           </div>
         </div>
       </PageSection>
 
       <PageSection>
-        {downloadError && (
-          <Alert
-            variant="danger"
-            title={downloadError}
-            isInline
-            style={{ marginBottom: '16px' }}
-            actionClose={<Button variant="plain" onClick={() => setDownloadError(null)}>×</Button>}
-          />
+        {error && (
+          <Alert variant="danger" title={error} isInline style={{ marginBottom: 16 }}
+            actionClose={<Button variant="plain" onClick={() => setError(null)}>×</Button>} />
         )}
 
         <Card>
           <CardBody style={{ padding: 0 }}>
             {loading ? (
-              <div style={{ textAlign: 'center', padding: '60px' }}>
-                <Spinner size="xl" />
-              </div>
-            ) : error ? (
-              <div style={{ padding: '24px' }}>
-                <Alert variant="danger" title={error} isInline />
-              </div>
+              <div style={{ textAlign: 'center', padding: '60px' }}><Spinner size="xl" /></div>
             ) : history.length === 0 ? (
               <EmptyState style={{ padding: '60px 24px' }}>
                 <EmptyStateIcon icon={CubesIcon} />
-                <Title headingLevel="h3" size="lg">{t('history.empty')}</Title>
-                <EmptyStateBody>{t('history.emptyHint')}</EmptyStateBody>
+                <Title headingLevel="h3" size="lg">履歴がありません</Title>
+                <EmptyStateBody>ZIP インポートまたは変換を実行すると履歴が記録されます</EmptyStateBody>
               </EmptyState>
             ) : (
               <>
-                <Toolbar style={{ borderBottom: '1px solid #d2d2d2', padding: '8px 16px' }}>
-                  <ToolbarContent>
-                    <ToolbarItem align={{ default: 'alignRight' }}>
-                      <Badge isRead>{t('history.totalCount', { count: history.length })}</Badge>
-                    </ToolbarItem>
-                  </ToolbarContent>
-                </Toolbar>
+                {/* ツールバー */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 16px', borderBottom: '1px solid #d2d2d2', background: '#f5f5f5',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Checkbox
+                      id="select-all"
+                      isChecked={allChecked}
+                      onChange={toggleAll}
+                      aria-label="全選択"
+                      style={{ marginRight: 4 }}
+                    />
+                    <span style={{ fontSize: 13, color: '#6a6e73' }}>
+                      {someChecked || allChecked ? `${selected.size} 件選択中` : '全選択'}
+                    </span>
+                  </div>
+                  <Badge isRead>{history.length} 件</Badge>
+                </div>
 
+                {/* テーブル */}
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                     <thead>
-                      <tr style={{ background: '#f5f5f5', borderBottom: '2px solid #d2d2d2' }}>
-                        <th style={thStyle}>{t('history.colDate')}</th>
-                        <th style={thStyle}>{t('history.colService')}</th>
-                        <th style={{ ...thStyle, textAlign: 'center' }}>{t('history.colStatus')}</th>
-                        <th style={{ ...thStyle, textAlign: 'center' }}>{t('history.colScore')}</th>
-                        <th style={{ ...thStyle, textAlign: 'center', width: '160px' }}>{t('history.colAction')}</th>
+                      <tr style={{ borderBottom: '2px solid #d2d2d2' }}>
+                        <th style={{ ...thS, width: 40 }}></th>
+                        <th style={{ ...thS, width: 32 }}></th>
+                        <th style={thS}>実行日時</th>
+                        <th style={thS}>種別</th>
+                        <th style={thS}>Namespace</th>
+                        <th style={{ ...thS, textAlign: 'center' }}>結果</th>
+                        <th style={{ ...thS, textAlign: 'center' }}>成功/失敗</th>
+                        <th style={{ ...thS, textAlign: 'center', width: 120 }}>操作</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {history.map((entry, idx) => (
-                        <tr
-                          key={entry.id}
-                          style={{
-                            borderBottom: '1px solid #f0f0f0',
-                            background: idx % 2 === 0 ? '#ffffff' : '#fafafa',
-                            transition: 'background 0.1s',
-                          }}
-                          onMouseEnter={e => (e.currentTarget.style.background = '#f0f7ff')}
-                          onMouseLeave={e => (e.currentTarget.style.background = idx % 2 === 0 ? '#ffffff' : '#fafafa')}
-                        >
-                          {/* 生成日時 */}
-                          <td style={tdStyle}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <HistoryIcon style={{ color: '#8a8d90', fontSize: '14px', flexShrink: 0 }} />
-                              <span style={{ fontFamily: 'monospace', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                                {formatDate(entry.createdAt, i18n.language)}
-                              </span>
-                            </div>
-                          </td>
+                      {history.map((entry, idx) => {
+                        const failures = parseFailures(entry.failureDetails);
+                        const hasFailures = failures.length > 0;
+                        const isExpanded = expanded.has(entry.id);
+                        const isSelected = selected.has(entry.id);
 
-                          {/* サービス名 */}
-                          <td style={tdStyle}>
-                            <div style={{ fontWeight: 600 }}>{entry.serviceName || '—'}</div>
-                            {entry.serviceId && (
-                              <div style={{ fontSize: '12px', color: '#8a8d90', marginTop: '2px' }}>
-                                ID: {entry.serviceId}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* ステータス */}
-                          <td style={{ ...tdStyle, textAlign: 'center' }}>
-                            <Label color={statusColor(entry.status)}>
-                              {statusLabel(entry.status)}
-                            </Label>
-                          </td>
-
-                          {/* スコア */}
-                          <td style={{ ...tdStyle, textAlign: 'center' }}>
-                            {entry.compatibilityScore != null ? (
-                              <span style={{
-                                fontWeight: 700,
-                                fontSize: '15px',
-                                color: entry.compatibilityScore >= 80 ? '#3e8635'
-                                     : entry.compatibilityScore >= 50 ? '#c46100'
-                                     : '#c9190b',
-                              }}>
-                                {entry.compatibilityScore}{t('history.scoreUnit')}
-                              </span>
-                            ) : '—'}
-                          </td>
-
-                          {/* ダウンロード */}
-                          <td style={{ ...tdStyle, textAlign: 'center' }}>
-                            <Button
-                              variant="secondary"
-                              icon={<DownloadIcon />}
-                              onClick={() => handleDownload(entry)}
-                              isDisabled={downloading[entry.id] || entry.status?.toUpperCase() === 'FAILED'}
-                              size="sm"
+                        return (
+                          <React.Fragment key={entry.id}>
+                            <tr
+                              style={{
+                                borderBottom: isExpanded ? 'none' : '1px solid #f0f0f0',
+                                background: isSelected ? '#e8f1fb'
+                                  : idx % 2 === 0 ? '#ffffff' : '#fafafa',
+                              }}
                             >
-                              {downloading[entry.id]
-                                ? t('history.btnDownloading')
-                                : t('history.btnDownload')}
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
+                              {/* チェックボックス */}
+                              <td style={{ ...tdS, textAlign: 'center' }}>
+                                <Checkbox
+                                  id={`chk-${entry.id}`}
+                                  isChecked={isSelected}
+                                  onChange={() => toggleSelect(entry.id)}
+                                  aria-label={`選択 ${entry.id}`}
+                                />
+                              </td>
+
+                              {/* 展開ボタン（失敗がある場合のみ） */}
+                              <td style={{ ...tdS, textAlign: 'center' }}>
+                                {hasFailures && (
+                                  <Button variant="plain" size="sm"
+                                    onClick={() => toggleExpand(entry.id)}
+                                    aria-label="詳細">
+                                    {isExpanded ? <AngleDownIcon /> : <AngleRightIcon />}
+                                  </Button>
+                                )}
+                              </td>
+
+                              {/* 実行日時 */}
+                              <td style={tdS}>
+                                <span style={{ fontFamily: 'monospace', fontSize: 13, whiteSpace: 'nowrap' }}>
+                                  {formatDate(entry.createdAt, i18n.language)}
+                                </span>
+                              </td>
+
+                              {/* 種別 */}
+                              <td style={tdS}>{sourceLabel(entry.source)}</td>
+
+                              {/* Namespace */}
+                              <td style={tdS}>
+                                <code style={{ fontSize: 12 }}>{entry.namespace ?? '—'}</code>
+                              </td>
+
+                              {/* ステータス */}
+                              <td style={{ ...tdS, textAlign: 'center' }}>
+                                <Label color={statusColor(entry.status)}>
+                                  {entry.status === 'COMPLETED' ? '成功'
+                                    : entry.status === 'FAILED' ? '失敗'
+                                    : entry.status === 'PARTIAL' ? '一部失敗'
+                                    : entry.status}
+                                </Label>
+                              </td>
+
+                              {/* 成功/失敗カウント */}
+                              <td style={{ ...tdS, textAlign: 'center' }}>
+                                {entry.totalCount != null ? (
+                                  <span style={{ fontSize: 13 }}>
+                                    <span style={{ color: '#3e8635', fontWeight: 600 }}>
+                                      <CheckCircleIcon style={{ marginRight: 3, fontSize: 12 }} />
+                                      {entry.successCount ?? 0}
+                                    </span>
+                                    <span style={{ color: '#6a6e73', margin: '0 4px' }}>/</span>
+                                    <span style={{ color: (entry.failureCount ?? 0) > 0 ? '#c9190b' : '#6a6e73', fontWeight: (entry.failureCount ?? 0) > 0 ? 600 : 400 }}>
+                                      <ExclamationCircleIcon style={{ marginRight: 3, fontSize: 12 }} />
+                                      {entry.failureCount ?? 0}
+                                    </span>
+                                    <span style={{ color: '#8a8d90', fontSize: 11, marginLeft: 4 }}>
+                                      / {entry.totalCount}件
+                                    </span>
+                                  </span>
+                                ) : '—'}
+                              </td>
+
+                              {/* ダウンロード */}
+                              <td style={{ ...tdS, textAlign: 'center' }}>
+                                <Button
+                                  variant="secondary"
+                                  icon={<DownloadIcon />}
+                                  size="sm"
+                                  onClick={() => handleDownload(entry)}
+                                  isDisabled={downloading[entry.id] || entry.status === 'FAILED'}
+                                >
+                                  {downloading[entry.id] ? '...' : 'YAML'}
+                                </Button>
+                              </td>
+                            </tr>
+
+                            {/* 展開: 失敗詳細 */}
+                            {isExpanded && hasFailures && (
+                              <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                                <td colSpan={8} style={{ padding: '0 0 12px 72px', background: '#fff8f7' }}>
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: '#c9190b', marginBottom: 8 }}>
+                                    失敗リソース ({failures.length} 件)
+                                  </div>
+                                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                                    <thead>
+                                      <tr style={{ color: '#6a6e73' }}>
+                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>ファイル</th>
+                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>Kind</th>
+                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>名前</th>
+                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>エラー</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {failures.map((f, i) => (
+                                        <tr key={i} style={{ borderTop: '1px solid #f5c6c6' }}>
+                                          <td style={{ padding: '4px 12px', fontFamily: 'monospace' }}>{f.fileName}</td>
+                                          <td style={{ padding: '4px 12px' }}>
+                                            <Label isCompact color="red">{f.kind}</Label>
+                                          </td>
+                                          <td style={{ padding: '4px 12px', fontFamily: 'monospace' }}>{f.name}</td>
+                                          <td style={{ padding: '4px 12px', color: '#c9190b', wordBreak: 'break-all' }}>
+                                            {f.error}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -231,21 +384,41 @@ const HistoryPage: React.FC = () => {
           </CardBody>
         </Card>
       </PageSection>
+
+      {/* 削除確認モーダル */}
+      <Modal
+        variant={ModalVariant.small}
+        title="履歴の削除"
+        isOpen={deleteModal}
+        onClose={() => setDeleteModal(false)}
+        actions={[
+          <Button key="del" variant="danger" onClick={handleDelete} isLoading={deleting}>
+            削除する
+          </Button>,
+          <Button key="cancel" variant="link" onClick={() => setDeleteModal(false)}>
+            キャンセル
+          </Button>,
+        ]}
+      >
+        選択した <strong>{selected.size} 件</strong>の履歴を削除します。
+        保存された YAML も削除されます。この操作は元に戻せません。
+      </Modal>
     </>
   );
 };
 
-const thStyle: React.CSSProperties = {
+const thS: React.CSSProperties = {
   textAlign: 'left',
-  padding: '10px 16px',
+  padding: '10px 12px',
   fontWeight: 600,
-  fontSize: '13px',
+  fontSize: 13,
   color: '#3c3f42',
   whiteSpace: 'nowrap',
+  background: '#f5f5f5',
 };
 
-const tdStyle: React.CSSProperties = {
-  padding: '12px 16px',
+const tdS: React.CSSProperties = {
+  padding: '10px 12px',
   verticalAlign: 'middle',
 };
 

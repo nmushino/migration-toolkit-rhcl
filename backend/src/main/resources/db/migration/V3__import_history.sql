@@ -1,0 +1,8 @@
+ALTER TABLE conversion_history
+    ADD COLUMN IF NOT EXISTS source        VARCHAR(20)  DEFAULT 'CONVERT',
+    ADD COLUMN IF NOT EXISTS namespace     VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS total_count   INTEGER,
+    ADD COLUMN IF NOT EXISTS success_count INTEGER,
+    ADD COLUMN IF NOT EXISTS failure_count INTEGER,
+    ADD COLUMN IF NOT EXISTS failure_details TEXT,
+    ADD COLUMN IF NOT EXISTS exported_yaml   TEXT;
