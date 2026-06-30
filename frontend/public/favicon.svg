@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80">
+  <!-- Red Hat fedora hat icon — red on transparent, for browser favicon -->
+  <!-- Crown left side -->
+  <path d="M28 46 C26 28 34 10 50 7 C66 10 74 28 72 46 Z" fill="#ee0000"/>
+  <!-- Crown top dome -->
+  <ellipse cx="50" cy="7" rx="13" ry="7" fill="#ee0000"/>
+  <!-- Crown highlight (subtle) -->
+  <path d="M38 20 C40 12 46 8 50 7 C46 9 40 14 38 20Z" fill="rgba(255,255,255,0.18)"/>
+  <!-- Hatband -->
+  <rect x="27" y="44" width="46" height="7" rx="1" fill="#a30000"/>
+  <!-- Brim top surface -->
+  <ellipse cx="50" cy="58" rx="44" ry="10" fill="#ee0000"/>
+  <!-- Brim underside (darker, creates depth) -->
+  <path d="M6 58 Q50 72 94 58 Q50 65 6 58Z" fill="#c00000"/>
+</svg>

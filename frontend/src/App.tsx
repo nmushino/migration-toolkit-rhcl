@@ -126,81 +126,71 @@ const LangSwitcher: React.FC = () => {
   );
 };
 
+/* ── Red Hat フェドーラハット SVG（共通：白・透過背景） ──
+   公式ブランド「赤背景用ロゴ（Logo A reverse）」の白ハット部分のみを抽出し、
+   透過背景で使用する。サイドバー・マストヘッド共用。 */
+const RHHatIcon: React.FC<{ size?: number }> = ({ size = 32 }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 100 80"
+    width={size}
+    height={size * 0.8}
+    aria-hidden="true"
+    style={{ flexShrink: 0 }}
+  >
+    {/* クラウン（左右の側面） */}
+    <path d="M28 48 C26 30 34 10 50 7 C66 10 74 30 72 48 Z" fill="#ffffff" />
+    {/* クラウン頂部ドーム */}
+    <ellipse cx="50" cy="7" rx="13" ry="7" fill="#ffffff" />
+    {/* ハットバンド（赤：ブランドカラー #EE0000） */}
+    <rect x="27" y="46" width="46" height="7" rx="1" fill="#ee0000" />
+    {/* ブリム上面 */}
+    <ellipse cx="50" cy="59" rx="44" ry="10.5" fill="#ffffff" />
+    {/* ブリム下面の影（奥行き表現） */}
+    <path d="M6 59 Q50 73 94 59 Q50 67 6 59Z" fill="rgba(0,0,0,0.18)" />
+  </svg>
+);
+
 /* ── Masthead 用 Red Hat ロゴ ── */
 const RedHatLogo: React.FC = () => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 34" style={{ height: '28px', flexShrink: 0 }} aria-hidden="true">
-      <ellipse cx="20" cy="30" rx="18" ry="4" fill="rgba(255,255,255,0.25)" />
-      <path d="M6 20 Q8 10 20 8 Q32 10 34 20 Q30 24 20 24 Q10 24 6 20Z" fill="#ee0000" />
-      <path d="M2 22 Q4 18 6 20 Q10 24 20 24 Q30 24 34 20 Q36 18 38 22 Q34 28 20 28 Q6 28 2 22Z" fill="#cc0000" />
-      <path d="M8 20 Q10 17 20 16 Q30 17 32 20 Q30 22 20 22 Q10 22 8 20Z" fill="white" />
-    </svg>
-    <span style={{ fontSize: '14px', fontWeight: 700, color: '#ffffff', letterSpacing: '0.01em' }}>Red Hat</span>
+  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <RHHatIcon size={30} />
+    <span style={{
+      fontFamily: "'Red Hat Display','Liberation Sans','Arial Black',sans-serif",
+      fontSize: '15px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.2px',
+    }}>
+      Red Hat
+    </span>
   </div>
 );
 
-/* ── サイドバー用 Red Hat ロゴ（黒背景・公式ブランド準拠） ── */
+/* ── サイドバー用 Red Hat ロゴ ──
+   公式ブランド「赤背景用ロゴ (Logo A reverse)」の白ハット + ワードマークを
+   透過背景で使用。背景はメニューと同じ濃いグレー (#212427) に統一。 */
 const SidebarRedHatBrand: React.FC = () => (
   <div style={{
-    background: '#000000',
+    background: '#212427',
     padding: '20px 20px 16px',
     borderBottom: '1px solid #3c3f42',
   }}>
-    {/*
-      Red Hat 公式ロゴ reverse (白) バージョン
-      https://www.redhat.com/en/about/brand/standards/logo
-      黒背景に白のハット + "Red Hat" ワードマーク
-    */}
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-      {/* ハットアイコン（白） */}
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 60 52"
-        style={{ width: '44px', height: 'auto', flexShrink: 0 }}
-        aria-label="Red Hat"
-        role="img"
-      >
-        {/* クラウン */}
-        <path d="M30 3 C24 3 14 10 12 24 L48 24 C46 10 36 3 30 3Z" fill="#ffffff" />
-        {/* クラウン頂部の丸み */}
-        <ellipse cx="30" cy="3" rx="7" ry="4.5" fill="#ffffff" />
-        {/* ハットバンド（赤） */}
-        <rect x="12" y="24" width="36" height="5.5" rx="1" fill="#ee0000" />
-        {/* ブリム（つば） */}
-        <ellipse cx="30" cy="33" rx="26" ry="7" fill="#ffffff" />
-        {/* ブリム下の影（半透明白） */}
-        <ellipse cx="30" cy="39" rx="24" ry="3.5" fill="rgba(255,255,255,0.18)" />
-      </svg>
-
-      {/* "Red Hat" ワードマーク */}
-      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-        <span style={{
-          fontFamily: "'Red Hat Display','Liberation Sans','Arial Black',sans-serif",
-          fontWeight: 800,
-          fontSize: '22px',
-          color: '#ffffff',
-          letterSpacing: '-0.3px',
-        }}>
-          Red Hat
-        </span>
-      </div>
-    </div>
-
-    {/* サブタイトル */}
-    <div style={{
-      borderTop: '1px solid #3c3f42',
-      paddingTop: '10px',
-    }}>
-      <p style={{
-        margin: 0,
-        fontSize: '10.5px',
-        fontWeight: 500,
-        color: '#b8bbbe',
-        lineHeight: 1.45,
-        letterSpacing: '0.01em',
+      <RHHatIcon size={44} />
+      <span style={{
+        fontFamily: "'Red Hat Display','Liberation Sans','Arial Black',sans-serif",
+        fontWeight: 800,
+        fontSize: '22px',
+        color: '#ffffff',
+        letterSpacing: '-0.3px',
       }}>
-        Connectivity Link<br />
-        Migration Toolkit
+        Red Hat
+      </span>
+    </div>
+    <div style={{ borderTop: '1px solid #3c3f42', paddingTop: '10px' }}>
+      <p style={{
+        margin: 0, fontSize: '10.5px', fontWeight: 500,
+        color: '#b8bbbe', lineHeight: 1.45, letterSpacing: '0.01em',
+      }}>
+        Connectivity Link<br />Migration Toolkit
       </p>
     </div>
   </div>
