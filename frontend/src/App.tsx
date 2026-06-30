@@ -22,7 +22,18 @@ import {
   Text,
   TextVariants,
 } from '@patternfly/react-core';
-import { BarsIcon } from '@patternfly/react-icons';
+import {
+  BarsIcon,
+  PluggedIcon,
+  ListIcon,
+  CheckCircleIcon,
+  CodeIcon,
+  EyeIcon,
+  SecurityIcon,
+  DownloadIcon,
+  UploadIcon,
+  HistoryIcon,
+} from '@patternfly/react-icons';
 
 import ConnectionPage from './pages/ConnectionPage';
 import APISelectionPage from './pages/APISelectionPage';
@@ -227,18 +238,18 @@ const AppContent: React.FC = () => {
   });
 
   const workflowItems = [
-    { path: '/', label: t('nav.connection') },
-    { path: '/services', label: t('nav.apiList') },
-    { path: '/compatibility', label: t('nav.compatibility') },
-    { path: '/convert', label: t('nav.convert') },
-    { path: '/yaml', label: t('nav.yamlPreview') },
-    { path: '/validate', label: t('nav.validation') },
-    { path: '/download', label: t('nav.download') },
+    { path: '/',            label: t('nav.connection'),   icon: <PluggedIcon /> },
+    { path: '/services',   label: t('nav.apiList'),       icon: <ListIcon /> },
+    { path: '/compatibility', label: t('nav.compatibility'), icon: <CheckCircleIcon /> },
+    { path: '/convert',    label: t('nav.convert'),       icon: <CodeIcon /> },
+    { path: '/yaml',       label: t('nav.yamlPreview'),   icon: <EyeIcon /> },
+    { path: '/validate',   label: t('nav.validation'),    icon: <SecurityIcon /> },
+    { path: '/download',   label: t('nav.download'),      icon: <DownloadIcon /> },
   ];
 
   const toolItems = [
-    { path: '/import', label: t('nav.import') },
-    { path: '/history', label: t('nav.history') },
+    { path: '/import',  label: t('nav.import'),  icon: <UploadIcon /> },
+    { path: '/history', label: t('nav.history'), icon: <HistoryIcon /> },
   ];
 
   const isWorkflowActive = workflowItems.some(i => i.path === location.pathname);
@@ -261,7 +272,10 @@ const AppContent: React.FC = () => {
                 isActive={location.pathname === item.path}
                 onClick={() => navigate(item.path)}
               >
-                {item.label}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '16px', flexShrink: 0, opacity: 0.85 }}>{item.icon}</span>
+                  {item.label}
+                </span>
               </NavItem>
             ))}
           </NavExpandable>
@@ -278,7 +292,10 @@ const AppContent: React.FC = () => {
                 isActive={location.pathname === item.path}
                 onClick={() => navigate(item.path)}
               >
-                {item.label}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '16px', flexShrink: 0, opacity: 0.85 }}>{item.icon}</span>
+                  {item.label}
+                </span>
               </NavItem>
             ))}
           </NavExpandable>
