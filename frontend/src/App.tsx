@@ -184,7 +184,7 @@ const SidebarRedHatBrand: React.FC = () => (
         margin: 0, fontSize: '10.5px', fontWeight: 500,
         color: '#b8bbbe', lineHeight: 1.45, letterSpacing: '0.01em',
       }}>
-        Red Hat Connectivity Link for Migration Toolkit
+        Migration Toolkit for Red Hat Connectivity Link
       </p>
     </div>
   </div>
@@ -336,7 +336,7 @@ const AppContent: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <Page
-        masthead={masthead}
+        header={masthead}
         sidebar={isSidebarOpen ? sidebar : undefined}
         isManagedSidebar={false}
         style={{ flex: 1, minHeight: 0 }}
