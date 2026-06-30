@@ -1,4 +1,4 @@
-import React, { useState, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useRef, Component, ErrorInfo, ReactNode, useCallback } from 'react';
 import {
   PageSection,
   PageSectionVariants,
@@ -23,13 +23,239 @@ import {
   TimesCircleIcon,
   DownloadIcon,
   PlayIcon,
+  CopyIcon,
 } from '@patternfly/react-icons';
 import { useTranslation } from 'react-i18next';
-import { importApi, downloadApi, applyApi } from '../api/client';
+import { importApi, downloadApi, applyApi, gatewayApi } from '../api/client';
 
 interface YamlFile { name: string; content: string; }
 type EditMap = Record<string, string>;
 interface ApplyResult { fileName: string; success: boolean; message: string; }
+
+/* ── YAML パーサーユーティリティ ── */
+interface RouteInfo { path: string; method: string; }
+interface AuthInfo {
+  type: 'apiKey' | 'jwt' | 'none';
+  prefix?: string;
+  headerName?: string;
+}
+interface TestInfo {
+  gatewayName: string;
+  routes: RouteInfo[];
+  auth: AuthInfo;
+}
+
+/**
+ * YAML ファイル群からテスト情報（Gateway 名・ルート・認証方式）を抽出する。
+ * SnakeYAML は使えないため正規表現による簡易パースを行う。
+ */
+function parseTestInfo(edits: EditMap): TestInfo {
+  const gatewayYaml  = edits['gateway.yaml']  ?? '';
+  const routeYaml    = edits['httproute.yaml'] ?? '';
+  const policyYaml   = edits['policy.yaml']   ?? '';
+
+  // Gateway 名
+  const gwNameMatch = gatewayYaml.match(/^  name:\s*(.+)$/m);
+  const gatewayName = gwNameMatch ? gwNameMatch[1].trim() : '';
+
+  // HTTPRoute からパスとメソッドを抽出
+  const routes: RouteInfo[] = [];
+  const pathMatches   = Array.from(routeYaml.matchAll(/value:\s*"([^"]+)"/g));
+  const methodMatches = Array.from(routeYaml.matchAll(/method:\s*(\w+)/g));
+  pathMatches.forEach((pm, i) => {
+    routes.push({
+      path: pm[1],
+      method: methodMatches[i]?.[1] ?? 'GET',
+    });
+  });
+  if (routes.length === 0) routes.push({ path: '/', method: 'GET' });
+
+  // AuthPolicy から認証方式を判定
+  let auth: AuthInfo = { type: 'none' };
+  if (policyYaml.includes('jwt:') || policyYaml.includes('jwt-auth:')) {
+    auth = { type: 'jwt', headerName: 'Authorization' };
+  } else if (policyYaml.includes('apiKey:') || policyYaml.includes('api-key-auth:')) {
+    const prefixMatch = policyYaml.match(/prefix:\s*(\w+)/);
+    auth = {
+      type: 'apiKey',
+      prefix: prefixMatch ? prefixMatch[1] : 'APIKEY',
+      headerName: 'Authorization',
+    };
+  }
+
+  return { gatewayName, routes, auth };
+}
+
+/* ── テスト情報パネル ── */
+interface TestInfoPanelProps {
+  testInfo: TestInfo;
+  namespace: string;
+}
+const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) => {
+  const [gatewayUrl, setGatewayUrl] = useState<string | null>(null);
+  const [gwLoading, setGwLoading]   = useState(false);
+  const [gwError, setGwError]       = useState<string | null>(null);
+  const [copied, setCopied]         = useState<string | null>(null);
+  const [apiKeyValue, setApiKeyValue] = useState('your-api-key');
+  const [jwtValue, setJwtValue]       = useState('your-jwt-token');
+
+  const fetchGatewayUrl = useCallback(async () => {
+    if (!testInfo.gatewayName || !namespace) return;
+    setGwLoading(true); setGwError(null);
+    try {
+      const res = await gatewayApi.getInfo(namespace, testInfo.gatewayName);
+      const data = res.data;
+      if (data.ready) {
+        setGatewayUrl(data.httpUrl);
+      } else {
+        setGwError('Gateway の外部 URL がまだ割り当てられていません。しばらく待ってから再試行してください。');
+      }
+    } catch (e: any) {
+      setGwError(e.response?.data?.error ?? e.message);
+    } finally { setGwLoading(false); }
+  }, [testInfo.gatewayName, namespace]);
+
+  // マウント時に自動取得
+  React.useEffect(() => { fetchGatewayUrl(); }, [fetchGatewayUrl]);
+
+  const buildAuthHeader = (): string => {
+    if (testInfo.auth.type === 'apiKey') {
+      return `-H "${testInfo.auth.headerName ?? 'Authorization'}: ${testInfo.auth.prefix ?? 'APIKEY'} ${apiKeyValue}"`;
+    }
+    if (testInfo.auth.type === 'jwt') {
+      return `-H "Authorization: Bearer ${jwtValue}"`;
+    }
+    return '';
+  };
+
+  const buildCurl = (route: RouteInfo): string => {
+    const base = gatewayUrl ?? 'http://<GATEWAY_URL>';
+    const auth = buildAuthHeader();
+    const methodFlag = route.method !== 'GET' ? ` -X ${route.method}` : '';
+    return `curl${methodFlag}${auth ? ' ' + auth : ''} "${base}${route.path}"`;
+  };
+
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
+
+  const infoRow = (label: string, value: React.ReactNode) => (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 8 }}>
+      <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 13, wordBreak: 'break-all' }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <Card style={{ border: '1px solid #0066cc33', background: '#f0f7ff' }}>
+      <CardBody>
+        <Title headingLevel="h3" size="md" style={{ marginBottom: 16, color: '#0066cc' }}>
+          接続情報 &amp; curl テスト
+        </Title>
+
+        {/* Gateway URL */}
+        <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fff', borderRadius: 6, border: '1px solid #d2d2d2' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Gateway URL</div>
+          {gwLoading && <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: '#6a6e73' }}><Spinner size="sm" /> 取得中...</div>}
+          {gwError && (
+            <div style={{ fontSize: 13, color: '#c9190b', marginBottom: 8 }}>{gwError}</div>
+          )}
+          {!gwLoading && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {gatewayUrl ? (
+                <>
+                  <code style={{ fontSize: 13, background: '#f5f5f5', padding: '4px 8px', borderRadius: 4 }}>{gatewayUrl}</code>
+                  <Button variant="plain" aria-label="コピー" style={{ padding: 4 }}
+                    onClick={() => copyToClipboard(gatewayUrl, 'gwurl')}>
+                    <CopyIcon /> {copied === 'gwurl' ? '✓' : ''}
+                  </Button>
+                </>
+              ) : (
+                <span style={{ fontSize: 13, color: '#6a6e73' }}>{gwError ? '' : '—'}</span>
+              )}
+              <Button variant="link" onClick={fetchGatewayUrl} isDisabled={gwLoading}
+                style={{ fontSize: 12 }}>
+                再取得
+              </Button>
+            </div>
+          )}
+          {infoRow('Gateway 名', <code style={{ fontSize: 12 }}>{testInfo.gatewayName}</code>)}
+          {infoRow('Namespace', <code style={{ fontSize: 12 }}>{namespace}</code>)}
+        </div>
+
+        {/* 認証情報 */}
+        <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fff', borderRadius: 6, border: '1px solid #d2d2d2' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>認証方式</div>
+          {testInfo.auth.type === 'apiKey' && (
+            <>
+              {infoRow('タイプ', <Label isCompact color="blue">API Key</Label>)}
+              {infoRow('ヘッダー', <code style={{ fontSize: 12 }}>{testInfo.auth.headerName}: {testInfo.auth.prefix} &lt;key&gt;</code>)}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>API キー値</span>
+                <TextInput
+                  value={apiKeyValue}
+                  onChange={(_e, v) => setApiKeyValue(v)}
+                  placeholder="your-api-key"
+                  style={{ width: 280, fontSize: 13 }}
+                />
+              </div>
+            </>
+          )}
+          {testInfo.auth.type === 'jwt' && (
+            <>
+              {infoRow('タイプ', <Label isCompact color="purple">JWT (Bearer)</Label>)}
+              {infoRow('ヘッダー', <code style={{ fontSize: 12 }}>Authorization: Bearer &lt;token&gt;</code>)}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>JWT トークン</span>
+                <TextInput
+                  value={jwtValue}
+                  onChange={(_e, v) => setJwtValue(v)}
+                  placeholder="your-jwt-token"
+                  style={{ width: 280, fontSize: 13 }}
+                />
+              </div>
+            </>
+          )}
+          {testInfo.auth.type === 'none' && infoRow('タイプ', <Label isCompact color="grey">認証なし</Label>)}
+        </div>
+
+        {/* curl コマンド */}
+        <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 6, border: '1px solid #d2d2d2' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>curl テストコマンド</div>
+          {testInfo.routes.map((route, i) => {
+            const cmd = buildCurl(route);
+            const key = `curl-${i}`;
+            return (
+              <div key={i} style={{ marginBottom: i < testInfo.routes.length - 1 ? 12 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Label isCompact color="blue">{route.method}</Label>
+                  <code style={{ fontSize: 12, color: '#6a6e73' }}>{route.path}</code>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <pre style={{
+                    flex: 1, margin: 0, padding: '8px 12px', fontSize: 12,
+                    background: '#1b1d21', color: '#d4d4d4', borderRadius: 4,
+                    fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                    overflowX: 'auto',
+                  }}>
+                    {cmd}
+                  </pre>
+                  <Button variant="plain" aria-label="コピー" style={{ padding: 6, flexShrink: 0, marginTop: 2 }}
+                    onClick={() => copyToClipboard(cmd, key)}>
+                    {copied === key ? <CheckCircleIcon color="var(--pf-v5-global--success-color--100)" /> : <CopyIcon />}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardBody>
+    </Card>
+  );
+};
 
 /* ── Error Boundary ── */
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; msg: string }> {
@@ -77,7 +303,7 @@ const SimpleYamlTabs: React.FC<SimpleTabs> = ({ files, edits, onEdit }) => {
               padding: '8px 16px', fontSize: 13, cursor: 'pointer',
               border: 'none', borderBottom: i === active ? '2px solid #0066cc' : 'none',
               background: i === active ? '#f0f7ff' : 'transparent',
-              color: i === active ? '#0066cc' : '#3c3f42',
+              color: i === active ? '#0066cc' : '#333',
               fontWeight: i === active ? 600 : 400,
               marginBottom: -2,
             }}
@@ -87,11 +313,19 @@ const SimpleYamlTabs: React.FC<SimpleTabs> = ({ files, edits, onEdit }) => {
         ))}
       </div>
 
-      {/* 編集トグル */}
+      {/* 編集/表示トグル */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <Button variant="secondary" size="sm" onClick={() => setEditMode(p => !p)}>
-          {editMode ? '✓ 完了' : '✏ 編集'}
-        </Button>
+        <button
+          onClick={() => setEditMode(m => !m)}
+          style={{
+            fontSize: 12, padding: '4px 12px', cursor: 'pointer',
+            border: '1px solid #8a8d90', borderRadius: 4,
+            background: editMode ? '#0066cc' : '#fff',
+            color: editMode ? '#fff' : '#333',
+          }}
+        >
+          {editMode ? '表示モード' : '編集モード'}
+        </button>
       </div>
 
       {/* コンテンツ */}
@@ -133,10 +367,37 @@ const ImportPageInner: React.FC = () => {
   const [downloaded, setDownloaded]     = useState(false);
   const [applying, setApplying]         = useState(false);
   const [applyResults, setApplyResults] = useState<ApplyResult[] | null>(null);
+  const [testInfo, setTestInfo]         = useState<TestInfo | null>(null);
+  const [portFixNotice, setPortFixNotice] = useState<string | null>(null);
 
   const reset = () => {
     setFiles([]); setEdits({}); setUploadedName('');
     setApplyResults(null); setError(null); setDownloaded(false);
+    setTestInfo(null); setPortFixNotice(null);
+  };
+
+  /**
+   * 外部バックエンド検出:
+   *   serviceentry.yaml が含まれている、または
+   *   いずれかの YAML に type: ExternalName / kind: ServiceEntry が含まれる場合 true
+   */
+  const detectExternalBackend = (editMap: EditMap): boolean => {
+    if ('serviceentry.yaml' in editMap) return true;
+    return Object.values(editMap).some(
+      yaml => /type:\s*ExternalName/i.test(yaml) || /kind:\s*ServiceEntry/i.test(yaml)
+    );
+  };
+
+  /**
+   * HTTPRoute の backendRefs.port 8080 → 443 変換。
+   * backendRefs ブロック内のみを対象とし、Gateway リスナーポート等は変更しない。
+   */
+  const fixHttpRoutePort = (yaml: string): string => {
+    // backendRefs ブロックを見つけ、その中の port: 8080 を port: 443 に変換
+    return yaml.replace(
+      /([ \t]*backendRefs:[\s\S]*?)([ \t]+port:[ \t]*)8080([ \t]*(?:\n|$))/g,
+      '$1$2443$3'
+    );
   };
 
   const handleFile = async (file: File) => {
@@ -158,6 +419,10 @@ const ImportPageInner: React.FC = () => {
       const init: EditMap = {};
       loaded.forEach(f => { init[f.name] = f.content; });
       setFiles(loaded); setEdits(init);
+      // 読み込み直後に外部バックエンドを検出したら事前通知
+      if (detectExternalBackend(init)) {
+        setPortFixNotice('外部バックエンドリソースを検出しました。「Namespace を適用」を実行すると httproute.yaml の backendRefs.port が自動的に 443 に変換されます');
+      }
     } catch (e: any) {
       setError(t('import.errorUpload', { message: e.response?.data?.error ?? e.message }));
     } finally { setLoading(false); }
@@ -174,12 +439,31 @@ const ImportPageInner: React.FC = () => {
     .replace(/apiVersion: gateway\.networking\.k8s\.io\/v1beta1/g, 'apiVersion: gateway.networking.k8s.io/v1');
 
   const applyNamespace = () => {
+    const isExternal = detectExternalBackend(edits);
     const updated: EditMap = {};
+    let portConverted = false;
+
     files.forEach(f => {
-      updated[f.name] = normalizeApiVersions(edits[f.name] ?? f.content)
+      let yaml = normalizeApiVersions(edits[f.name] ?? f.content)
         .replace(/^(\s*namespace:\s*).+$/gm, `$1${namespace}`);
+
+      // 外部バックエンドが検出された場合、HTTPRoute の backendRefs.port を 443 に変換
+      if (isExternal && f.name === 'httproute.yaml') {
+        const fixed = fixHttpRoutePort(yaml);
+        if (fixed !== yaml) { portConverted = true; yaml = fixed; }
+      }
+
+      updated[f.name] = yaml;
     });
+
     setEdits(updated);
+    if (portConverted) {
+      setPortFixNotice('外部バックエンドを検出: httproute.yaml の backendRefs.port を 8080 → 443 に変換しました');
+    } else if (isExternal) {
+      setPortFixNotice('外部バックエンドを検出: httproute.yaml の port は既に 443 です');
+    } else {
+      setPortFixNotice(null);
+    }
   };
 
   const handleDownload = async () => {
@@ -196,16 +480,27 @@ const ImportPageInner: React.FC = () => {
   };
 
   const handleApply = async () => {
-    setApplying(true); setApplyResults(null); setError(null);
+    setApplying(true); setApplyResults(null); setError(null); setTestInfo(null);
     const yamlFiles: Record<string, string> = {};
     files.forEach(f => { yamlFiles[f.name] = edits[f.name] ?? f.content; });
     try {
       const res = await applyApi.apply(namespace, yamlFiles);
-      setApplyResults(res.data?.results ?? []);
+      const results: ApplyResult[] = res.data?.results ?? [];
+      setApplyResults(results);
+      // 1件以上成功した場合にテスト情報パネルを表示
+      if (results.some(r => r.success)) {
+        setTestInfo(parseTestInfo(edits));
+      }
     } catch (e: any) {
       const data = e.response?.data;
-      if (Array.isArray(data?.results)) setApplyResults(data.results);
-      else setError(t('import.errorApply', { message: data?.error ?? e.message }));
+      if (Array.isArray(data?.results)) {
+        setApplyResults(data.results);
+        if (data.results.some((r: ApplyResult) => r.success)) {
+          setTestInfo(parseTestInfo(edits));
+        }
+      } else {
+        setError(t('import.errorApply', { message: data?.error ?? e.message }));
+      }
     } finally { setApplying(false); }
   };
 
@@ -313,6 +608,21 @@ const ImportPageInner: React.FC = () => {
                         </Flex>
                       </FormGroup>
                     </Form>
+                    {portFixNotice && (
+                      <div style={{
+                        marginTop: 12, padding: '8px 12px', borderRadius: 4,
+                        background: portFixNotice.includes('変換しました') ? '#f0f7e6' : '#f0f7ff',
+                        border: `1px solid ${portFixNotice.includes('変換しました') ? '#3e8635' : '#0066cc'}`,
+                        fontSize: 13,
+                        color: portFixNotice.includes('変換しました') ? '#1e4f18' : '#004080',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                      }}>
+                        {portFixNotice.includes('変換しました')
+                          ? <CheckCircleIcon color="#3e8635" />
+                          : <span style={{ fontWeight: 700 }}>ℹ</span>}
+                        {portFixNotice}
+                      </div>
+                    )}
                     <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <Button variant="primary"
                         icon={applying ? <Spinner size="sm" /> : <PlayIcon />}
@@ -372,6 +682,13 @@ const ImportPageInner: React.FC = () => {
                       </div>
                     </CardBody>
                   </Card>
+                </StackItem>
+              )}
+
+              {/* テスト情報パネル（適用成功後に表示） */}
+              {testInfo && (
+                <StackItem>
+                  <TestInfoPanel testInfo={testInfo} namespace={namespace} />
                 </StackItem>
               )}
 
