@@ -2,6 +2,7 @@ package com.example.migrationtool.controller;
 
 import com.example.migrationtool.util.Messages;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
+import io.fabric8.kubernetes.api.model.rbac.*;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.base.PatchContext;
 import io.fabric8.kubernetes.client.dsl.base.PatchType;
@@ -51,6 +52,8 @@ public class ApplyController {
 
         String namespace = (request.namespace() != null && !request.namespace().isBlank())
                 ? request.namespace() : "default";
+
+        ensureRbac(namespace);
 
         List<ApplyResult> results = new ArrayList<>();
         boolean anySuccess = false;
@@ -126,6 +129,56 @@ public class ApplyController {
                 "successCount", results.stream().filter(ApplyResult::success).count(),
                 "errorCount", results.stream().filter(r -> !r.success()).count()
         )).build();
+    }
+
+    /**
+     * 対象 namespace に migration-tool-backend SA 用の Role/RoleBinding を作成する。
+     * 既に存在する場合は何もしない（apply で冪等）。
+     */
+    private void ensureRbac(String namespace) {
+        String saName = "migration-tool-backend";
+        String saNamespace = "migration-toolkit";
+        String roleName = "migration-tool-istio-manager";
+
+        PolicyRule istioRule = new PolicyRuleBuilder()
+                .withApiGroups("networking.istio.io")
+                .withResources("destinationrules", "serviceentries", "serviceentrys", "virtualservices")
+                .withVerbs("get", "list", "create", "update", "patch", "delete")
+                .build();
+        PolicyRule gatewayRule = new PolicyRuleBuilder()
+                .withApiGroups("gateway.networking.k8s.io")
+                .withResources("gateways", "httproutes")
+                .withVerbs("get", "list", "create", "update", "patch", "delete")
+                .build();
+        PolicyRule kuadrantRule = new PolicyRuleBuilder()
+                .withApiGroups("kuadrant.io")
+                .withResources("authpolicies", "ratelimitpolicies")
+                .withVerbs("get", "list", "create", "update", "patch", "delete")
+                .build();
+        PolicyRule coreRule = new PolicyRuleBuilder()
+                .withApiGroups("")
+                .withResources("secrets", "configmaps", "services")
+                .withVerbs("get", "list", "create", "update", "patch", "delete")
+                .build();
+
+        Role role = new RoleBuilder()
+                .withNewMetadata().withName(roleName).withNamespace(namespace).endMetadata()
+                .withRules(istioRule, gatewayRule, kuadrantRule, coreRule)
+                .build();
+
+        RoleBinding binding = new RoleBindingBuilder()
+                .withNewMetadata().withName(saName + "-" + roleName).withNamespace(namespace).endMetadata()
+                .withNewRoleRef().withApiGroup("rbac.authorization.k8s.io").withKind("Role").withName(roleName).endRoleRef()
+                .addNewSubject().withKind("ServiceAccount").withName(saName).withNamespace(saNamespace).endSubject()
+                .build();
+
+        try {
+            client.rbac().roles().inNamespace(namespace).createOrReplace(role);
+            client.rbac().roleBindings().inNamespace(namespace).createOrReplace(binding);
+            LOG.infof("RBAC ensured for namespace %s", namespace);
+        } catch (Exception e) {
+            LOG.warnf("Could not ensure RBAC in namespace %s: %s", namespace, e.getMessage());
+        }
     }
 
     /** マルチドキュメント YAML を "---" で分割して個々のドキュメント文字列リストを返す。 */
@@ -259,6 +312,14 @@ public class ApplyController {
         if (lower.endsWith("policy"))  return lower.substring(0, lower.length() - 6) + "policies";
         if (lower.endsWith("status"))  return lower + "es";
         if (lower.endsWith("s"))       return lower + "es";
+        // 子音 + y で終わる場合: y → ies (例: serviceentry → serviceentries)
+        if (lower.length() >= 2) {
+            char y = lower.charAt(lower.length() - 1);
+            char prev = lower.charAt(lower.length() - 2);
+            if (y == 'y' && "bcdfghjklmnpqrstvwxz".indexOf(prev) >= 0) {
+                return lower.substring(0, lower.length() - 1) + "ies";
+            }
+        }
         return lower + "s";
     }
 }

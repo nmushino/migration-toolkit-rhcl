@@ -33,6 +33,14 @@ Quarkus バックエンド + React/PatternFly フロントエンド で構成さ
 | npm | 9 以上 | フロントエンド依存関係管理 |
 | Docker / Podman | 最新版 | コンテナイメージビルド（ローカル検証時） |
 
+### 言語切替
+
+- 日本語（デフォルト、ja ロケール環境）
+`./deploy/install.sh`
+
+- 英語で実行
+`INSTALL_LANG=en ./deploy/install.sh`
+
 ### OpenShift クラスター
 
 | ツール / コンポーネント | バージョン | 用途 |
@@ -467,6 +475,13 @@ cd frontend
 npm install --legacy-peer-deps
 VITE_API_URL=http://localhost:8080 npm run dev
 ```
+
+### Language Selection
+- Japanese (default, ja locale)
+`./deploy/install.sh`
+
+- Run in English
+`INSTALL_LANG=en ./deploy/install.sh`
 
 ---
 

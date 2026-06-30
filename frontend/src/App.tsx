@@ -178,18 +178,6 @@ const SidebarRedHatBrand: React.FC = () => (
     padding: '20px 20px 16px',
     borderBottom: '1px solid #3c3f42',
   }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-      <RHHatIcon size={44} />
-      <span style={{
-        fontFamily: "'Red Hat Display','Liberation Sans','Arial Black',sans-serif",
-        fontWeight: 800,
-        fontSize: '22px',
-        color: '#ffffff',
-        letterSpacing: '-0.3px',
-      }}>
-        Red Hat
-      </span>
-    </div>
     <div style={{ borderTop: '1px solid #3c3f42', paddingTop: '10px' }}>
       <p style={{
         margin: 0, fontSize: '10.5px', fontWeight: 500,
@@ -257,7 +245,6 @@ const AppContent: React.FC = () => {
 
   const sidebar = (
     <PageSidebar isSidebarOpen={isSidebarOpen}>
-      <SidebarRedHatBrand />
       <PageSidebarBody>
         <Nav theme="dark">
           <NavExpandable

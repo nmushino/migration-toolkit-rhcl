@@ -12,7 +12,7 @@
     "import": "ZIPインポート / CL設定",
     "history": "変換履歴",
     "connected": "接続済み: {{url}}",
-    "appTitle": "3scale Migration Toolkit"
+    "appTitle": "Migration Toolkit"
   },
   "connection": {
     "title": "3scale 接続設定",

@@ -456,7 +456,7 @@ ServiceEntry・DestinationRule・URLRewrite フィルターは不要なため生
 # %s - Connectivity Link Migration
 
 ## Overview
-3scale Migration Toolkit で生成した Kubernetes/OpenShift リソースです。
+Migration Toolkit で生成した Kubernetes/OpenShift リソースです。
 
 **元の 3scale サービス:** %s (ID: %s)
 **対象 Namespace:** %s

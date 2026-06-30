@@ -28,6 +28,7 @@ export const conversionApi = {
     tenant?: string;
     namespace: string;
     serviceIds: string[];
+    externalBackendUrl?: string;
   }) => api.post('/api/convert', data),
 };
 
@@ -54,6 +55,11 @@ export const importApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+};
+
+export const gatewayApi = {
+  getInfo: (namespace: string, name: string) =>
+    api.get('/api/gateway/info', { params: { namespace, name } }),
 };
 
 export const historyApi = {

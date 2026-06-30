@@ -9,7 +9,6 @@ import {
   Alert,
   Spinner,
   Progress,
-  ProgressVariant,
   DataList,
   DataListItem,
   DataListItemRow,
@@ -18,6 +17,10 @@ import {
   Label,
   Stack,
   StackItem,
+  Checkbox,
+  TextInput,
+  FormGroup,
+  Form,
 } from '@patternfly/react-core';
 import { CheckCircleIcon, TimesCircleIcon } from '@patternfly/react-icons';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +41,8 @@ const ConversionPage: React.FC<Props> = ({ appState, setAppState }) => {
   const [results, setResults] = useState<ConversionResultItem[]>(appState.conversionResults);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [isExternal, setIsExternal] = useState(false);
+  const [externalBackendUrl, setExternalBackendUrl] = useState('');
 
   const handleConvert = async () => {
     setLoading(true);
@@ -51,6 +56,7 @@ const ConversionPage: React.FC<Props> = ({ appState, setAppState }) => {
         tenant: appState.connection.tenant,
         namespace: appState.namespace,
         serviceIds: appState.selectedServices.map(s => s.id),
+        externalBackendUrl: isExternal && externalBackendUrl ? externalBackendUrl : undefined,
       });
       setProgress(100);
       const convResults: ConversionResultItem[] = resp.data.results;
@@ -111,6 +117,57 @@ const ConversionPage: React.FC<Props> = ({ appState, setAppState }) => {
                   ))}
                 </DataList>
 
+                <div style={{ marginTop: '20px', padding: '16px', background: '#f0f4f8', border: '1px solid #bee1f4', borderRadius: '6px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '12px', color: '#004080' }}>
+                    {t('conversion.backendType', 'バックエンド設定')}
+                  </div>
+                  <Form>
+                    <FormGroup>
+                      <Checkbox
+                        id="external-backend"
+                        label={t('conversion.externalBackend', 'バックエンドはクラスター外部のサービス (AWS ECS / 外部 HTTPS エンドポイント)')}
+                        isChecked={isExternal}
+                        onChange={(_e, checked) => setIsExternal(checked)}
+                      />
+                    </FormGroup>
+                    {isExternal && (
+                      <>
+                        <FormGroup
+                          label={t('conversion.externalBackendUrl', '外部バックエンド URL')}
+                          fieldId="external-backend-url"
+                          isRequired
+                          helperText={t('conversion.externalBackendUrlHelp', '例: https://foo.ecs.us-east-2.on.aws')}
+                        >
+                          <TextInput
+                            id="external-backend-url"
+                            type="url"
+                            value={externalBackendUrl}
+                            onChange={(_e, val) => setExternalBackendUrl(val)}
+                            placeholder="https://your-service.ecs.us-east-2.on.aws"
+                          />
+                        </FormGroup>
+                        <div style={{
+                          marginTop: '12px',
+                          padding: '12px',
+                          background: '#fff8e1',
+                          border: '1px solid #f0ab00',
+                          borderRadius: '4px',
+                          fontSize: '13px',
+                          color: '#795600',
+                        }}>
+                          <div style={{ fontWeight: 600, marginBottom: '6px' }}>
+                            {t('conversion.externalNote', '外部サービス向けに以下のリソースが追加生成されます：')}
+                          </div>
+                          <ul style={{ margin: 0, paddingLeft: '18px', lineHeight: '1.8' }}>
+                            <li><code>envoyfilter.yaml</code> — Istio Gateway の Envoy に外部 HTTPS cluster を直接注入（STRICT_DNS + TLS SNI）</li>
+                            <li><code>httproute.yaml</code> — <code>Host</code> ヘッダーを外部ホスト名に書き換えるフィルターを追加</li>
+                          </ul>
+                        </div>
+                      </>
+                    )}
+                  </Form>
+                </div>
+
                 {error && <Alert variant="danger" title={error} style={{ marginTop: '16px' }} />}
 
                 {loading && (
@@ -160,10 +217,35 @@ const ConversionPage: React.FC<Props> = ({ appState, setAppState }) => {
                               </DataListCell>,
                               <DataListCell key="files">
                                 {result.files ? (
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {result.files.map(f => (
-                                      <Label key={f} isCompact>{f}</Label>
-                                    ))}
+                                  <div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                      {result.files.map(f => {
+                                        const isExternalFile = f === 'envoyfilter.yaml';
+                                        return (
+                                          <Label
+                                            key={f}
+                                            isCompact
+                                            color={isExternalFile ? 'orange' : 'blue'}
+                                            title={isExternalFile ? '外部サービス向けリソース' : undefined}
+                                          >
+                                            {f}
+                                          </Label>
+                                        );
+                                      })}
+                                    </div>
+                                    {result.files.includes('envoyfilter.yaml') && (
+                                      <div style={{
+                                        marginTop: '6px',
+                                        fontSize: '12px',
+                                        color: '#795600',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}>
+                                        <span style={{ color: '#f0ab00' }}>●</span>
+                                        {t('conversion.externalFilesNote', '外部サービス向けリソースを含みます（EnvoyFilter + Host rewrite）')}
+                                      </div>
+                                    )}
                                   </div>
                                 ) : result.error}
                               </DataListCell>,

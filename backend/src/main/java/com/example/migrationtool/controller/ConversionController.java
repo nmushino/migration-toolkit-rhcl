@@ -58,7 +58,7 @@ public class ConversionController {
             try {
                 ApiService service = exportService.exportService(request.threescaleUrl, request.accessToken, serviceId);
                 CompatibilityResult compatibility = compatibilityService.check(service);
-                Map<String, String> yamlFiles = conversionService.convert(service, namespace);
+                Map<String, String> yamlFiles = conversionService.convert(service, namespace, request.externalBackendUrl);
 
                 String name = service.systemName != null ? service.systemName : service.name;
                 name = name.toLowerCase().replaceAll("[^a-z0-9]+", "-");
