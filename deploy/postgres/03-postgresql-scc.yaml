@@ -2,15 +2,26 @@ apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
 metadata:
   name: crunchy-postgres
+# priority: 10 ensures this SCC is evaluated BEFORE restricted-v2 (priority=null).
+# Without this, OpenShift picks restricted-v2 first (more restrictive wins tie),
+# assigning runAsUser from the namespace UID range instead of postgres UID 26,
+# causing chmod EPERM on PVC files owned by UID 26.
+priority: 10
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
 allowHostDirVolumePlugin: false
 allowHostIPC: false
 allowHostNetwork: false
 allowHostPID: false
 allowHostPorts: false
-allowPrivilegeEscalation: false
-allowPrivilegedContainer: false
+# fsGroup MustRunAs 26: forces the pod fsGroup to postgres GID (26).
+# This ensures projected-secret cert volumes (defaultMode 0600) are readable
+# by the postgres process, and PVC files created as GID 26 remain accessible.
 fsGroup:
-  type: RunAsAny
+  type: MustRunAs
+  ranges:
+  - min: 26
+    max: 26
 runAsUser:
   type: RunAsAny
 seLinuxContext:
