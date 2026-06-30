@@ -321,6 +321,7 @@ spec:
     authentication:
       api-key-auth:
         apiKey:
+          allNamespaces: true
           selector:
             matchLabels:
               app: %s
@@ -354,6 +355,27 @@ spec:
     // ─────────────────────────────────────────────
 
     private String generateSecret(String name, String namespace, ApiService service) {
+        String authType = service.authentication != null ? service.authentication.type : "none";
+
+        if ("apiKey".equals(authType)) {
+            // Kuadrant/Authorino がラベル selector で参照する API キー用 Secret。
+            // api_key フィールドの値がクライアントの送信する実際のキーになる。
+            // apply 前に openssl rand -hex 32 等で生成した値に置き換えること。
+            return """
+apiVersion: v1
+kind: Secret
+metadata:
+  name: %s-api-key
+  namespace: %s
+  labels:
+    app: %s
+    migrated-from: 3scale
+type: Opaque
+stringData:
+  api_key: "REPLACE_WITH_ACTUAL_API_KEY"
+""".formatted(name, namespace, name);
+        }
+
         return """
 apiVersion: v1
 kind: Secret
@@ -365,7 +387,6 @@ metadata:
     migrated-from: 3scale
 type: Opaque
 stringData:
-  # TODO: Replace with actual credentials
   client-id: "REPLACE_ME"
   client-secret: "REPLACE_ME"
 """.formatted(name, namespace, name);
