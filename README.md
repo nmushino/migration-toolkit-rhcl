@@ -7,6 +7,7 @@ Quarkus バックエンド + React/PatternFly フロントエンド で構成さ
 
 ## 目次 / Table of Contents
 
+- [スクリーンショット](#スクリーンショット)
 - [前提条件・必要ツール](#前提条件必要ツール)
 - [クイックスタート](#クイックスタート)
 - [アーキテクチャ](#アーキテクチャ)
@@ -17,6 +18,26 @@ Quarkus バックエンド + React/PatternFly フロントエンド で構成さ
 - [データモデル](#データモデル)
 - [国際化対応 (i18n)](#国際化対応-i18n)
 - [English Documentation](#english-documentation)
+
+---
+
+## スクリーンショット
+
+| 3scale 接続設定 | 互換性チェック |
+|:-:|:-:|
+| ![3scale 接続設定](.claude/images/connect.png) | ![互換性チェック](.claude/images/apilist.png) |
+
+| YAML 生成 | YAML プレビュー |
+|:-:|:-:|
+| ![YAML 生成](.claude/images/yaml.png) | ![YAML プレビュー](.claude/images/preview.png) |
+
+| バリデーション | ダウンロード |
+|:-:|:-:|
+| ![バリデーション](.claude/images/validation.png) | ![ダウンロード](.claude/images/download.png) |
+
+| ZIP インポート / CL 設定 | curl 疎通テスト |
+|:-:|:-:|
+| ![ZIP インポート](.claude/images/import.png) | ![curl 疎通テスト](.claude/images/rhcltest.png) |
 
 ---
 
@@ -448,6 +469,26 @@ Flyway マイグレーション:
 
 A GUI toolkit for migrating from 3scale to Red Hat Connectivity Link.  
 Built with a Quarkus backend and a React/PatternFly frontend.
+
+---
+
+## Screenshots
+
+| 3scale Connection Setup | Compatibility Check |
+|:-:|:-:|
+| ![3scale Connection](.claude/images/connect.png) | ![Compatibility Check](.claude/images/apilist.png) |
+
+| YAML Generation | YAML Preview |
+|:-:|:-:|
+| ![YAML Generation](.claude/images/yaml.png) | ![YAML Preview](.claude/images/preview.png) |
+
+| Validation | Download |
+|:-:|:-:|
+| ![Validation](.claude/images/validation.png) | ![Download](.claude/images/download.png) |
+
+| ZIP Import / CL Config | curl Connectivity Test |
+|:-:|:-:|
+| ![ZIP Import](.claude/images/import.png) | ![curl Test](.claude/images/rhcltest.png) |
 
 ---
 
