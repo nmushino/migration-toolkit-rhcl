@@ -33,9 +33,11 @@ import { ConversionHistory, FailureDetail } from '../api/types';
 
 const formatDate = (iso: string, locale: string): string => {
   try {
-    return new Date(iso).toLocaleString(locale === 'ja' ? 'ja-JP' : 'en-US', {
+    const isJa = locale === 'ja';
+    return new Date(iso).toLocaleString(isJa ? 'ja-JP' : 'en-US', {
       year: 'numeric', month: '2-digit', day: '2-digit',
       hour: '2-digit', minute: '2-digit', second: '2-digit',
+      timeZone: isJa ? 'Asia/Tokyo' : undefined,
     });
   } catch { return iso; }
 };
