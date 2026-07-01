@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.example</groupId>
+  <groupId>com.redhat.migrationtoolkit</groupId>
   <artifactId>migration-tool</artifactId>
   <version>1.0.0-SNAPSHOT</version>
   <packaging>jar</packaging>
@@ -87,6 +87,7 @@
       <artifactId>quarkus-jacoco</artifactId>
       <scope>test</scope>
     </dependency>
+
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-junit5-mockito</artifactId>
@@ -105,7 +106,7 @@
     <dependency>
       <groupId>com.tngtech.archunit</groupId>
       <artifactId>archunit-junit5</artifactId>
-      <version>1.3.0</version>
+      <version>1.3.1</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -124,6 +125,26 @@
 
   <build>
     <plugins>
+      <!-- src/test/e2e を追加テストソースディレクトリとして登録 -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>add-e2e-test-sources</id>
+            <phase>generate-test-sources</phase>
+            <goals><goal>add-test-source</goal></goals>
+            <configuration>
+              <sources>
+                <source>src/test/e2e</source>
+                <source>src/test/archtecter</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <groupId>io.quarkus.platform</groupId>
         <artifactId>quarkus-maven-plugin</artifactId>
@@ -154,13 +175,14 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>${surefire-plugin.version}</version>
         <configuration>
-          <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+          <argLine>@{argLine} -Dnet.bytebuddy.experimental=true</argLine>
           <systemPropertyVariables>
             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
             <maven.home>${maven.home}</maven.home>
           </systemPropertyVariables>
           <includes>
             <include>**/*Test.java</include>
+            <include>**/*IT.java</include>
           </includes>
         </configuration>
       </plugin>
@@ -179,7 +201,7 @@
           </execution>
         </executions>
         <configuration>
-          <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+          <argLine>@{argLine} -Dnet.bytebuddy.experimental=true</argLine>
           <systemPropertyVariables>
             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
             <maven.home>${maven.home}</maven.home>
@@ -190,25 +212,39 @@
         </configuration>
       </plugin>
 
-      <!-- JaCoCo: コードカバレッジ計測 -->
+      <!-- JaCoCo: コードカバレッジ計測
+           quarkus-jacoco がアプリクラスをオフライン計測してから @QuarkusTest カバレッジを
+           jacoco-quarkus.exec に記録する。
+           prepare-agent はユニットテスト (非 @QuarkusTest) のカバレッジを
+           jacoco-unit.exec に記録するが、quarkus-jacoco が既に計測した com/example/** は
+           excludes で除外して二重計測エラーを回避する。
+           merge ゴールで両 exec を統合し HTML レポートを生成する。 -->
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
         <version>0.8.12</version>
         <executions>
+          <!-- JaCoCo ランタイム初期化のみ目的 (クラス計測は quarkus-jacoco が担う)
+               includes で存在しないパターンを指定して実際の計測はさせない。
+               これにより quarkus-jacoco の offline probe が unit test 時にも
+               データを記録できるようになり coverage が向上する。 -->
           <execution>
             <id>jacoco-prepare-agent</id>
             <goals><goal>prepare-agent</goal></goals>
             <configuration>
               <destFile>${project.build.directory}/jacoco-unit.exec</destFile>
+              <includes>
+                <!-- 存在しないパターン: 計測なし・ランタイム初期化のみ -->
+                <include>__jacoco_runtime_init_only__</include>
+              </includes>
             </configuration>
           </execution>
+          <!-- 2つの exec を統合 -->
           <execution>
             <id>jacoco-merge</id>
             <phase>verify</phase>
             <goals><goal>merge</goal></goals>
             <configuration>
-              <destFile>${project.build.directory}/jacoco-merged.exec</destFile>
               <fileSets>
                 <fileSet>
                   <directory>${project.build.directory}</directory>
@@ -218,10 +254,12 @@
                   </includes>
                 </fileSet>
               </fileSets>
+              <destFile>${project.build.directory}/jacoco-merged.exec</destFile>
             </configuration>
           </execution>
+          <!-- 統合済み exec から HTML レポート生成 -->
           <execution>
-            <id>jacoco-merged-report</id>
+            <id>jacoco-report</id>
             <phase>verify</phase>
             <goals><goal>report</goal></goals>
             <configuration>
@@ -238,7 +276,7 @@
         <artifactId>maven-checkstyle-plugin</artifactId>
         <version>3.6.0</version>
         <configuration>
-          <configLocation>checkstyle.xml</configLocation>
+          <configLocation>src/test/checkstyle.xml</configLocation>
           <failsOnError>true</failsOnError>
           <consoleOutput>true</consoleOutput>
           <excludes>**/test/**/*</excludes>

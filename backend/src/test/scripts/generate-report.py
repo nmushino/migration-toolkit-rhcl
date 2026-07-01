@@ -112,7 +112,7 @@ def parse_test_dir(report_dir):
     return suites
 
 
-_ARCH_CLASS = "io.quarkusdroneshop.ArchitectureTest"
+_ARCH_CLASS = "com.redhat.migrationtoolkit.rhcl.ArchitectureTest"
 
 def parse_test_dir_filtered(report_dir, exclude_fqn=None):
     """Parse TEST-*.xml; optionally exclude a specific test class by FQN."""
@@ -158,7 +158,7 @@ if os.path.exists(arch_xml):
     _root = ET.parse(arch_xml).getroot()
     _suite = {
         "name":  "ArchitectureTest",
-        "pkg":   "io.quarkusdroneshop",
+        "pkg":   "com.redhat.migrationtoolkit.rhcl",
         "tests": int(_root.get("tests", 0)),
         "pass": 0, "fail": 0, "skip": 0,
         "time":  float(_root.get("time", 0)),
