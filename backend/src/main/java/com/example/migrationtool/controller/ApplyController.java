@@ -63,6 +63,7 @@ public class ApplyController {
         String source = (request.source() != null && !request.source().isBlank())
                 ? request.source() : "CONVERT";
 
+        ensureNamespace(namespace);
         ensureRbac(namespace);
 
         PatchContext ctx = new PatchContext.Builder()
@@ -218,6 +219,22 @@ public class ApplyController {
             LOG.infof("Authorino deployment restarted to reload API key Secrets");
         } catch (Exception e) {
             LOG.warnf("Could not restart Authorino: %s", e.getMessage());
+        }
+    }
+
+    private void ensureNamespace(String namespace) {
+        try {
+            var ns = client.namespaces().withName(namespace).get();
+            if (ns == null) {
+                client.namespaces().resource(
+                    new io.fabric8.kubernetes.api.model.NamespaceBuilder()
+                        .withNewMetadata().withName(namespace).endMetadata()
+                        .build()
+                ).create();
+                LOG.infof("Namespace %s created", namespace);
+            }
+        } catch (Exception e) {
+            LOG.warnf("Could not ensure namespace %s: %s", namespace, e.getMessage());
         }
     }
 
