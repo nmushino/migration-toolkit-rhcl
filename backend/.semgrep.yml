@@ -1,0 +1,95 @@
+rules:
+  # SQL インジェクション
+  - id: java-sql-injection
+    patterns:
+      - pattern: |
+          $STMT.executeQuery("..." + $INPUT + "...")
+      - pattern: |
+          $STMT.execute("..." + $INPUT + "...")
+    message: "SQL インジェクションの疑い: パラメータ化クエリを使用してください"
+    languages: [java]
+    severity: ERROR
+    metadata:
+      category: security
+      owasp: A03:2021
+      cwe: CWE-89
+
+  # ハードコードされたシークレット
+  - id: java-hardcoded-secret
+    pattern: |
+      String $KEY = "$VALUE";
+    metavariable-regex:
+      metavariable: $KEY
+      regex: "(?i)(password|passwd|secret|token|api[_]?key|auth)"
+    metavariable-regex:
+      metavariable: $VALUE
+      regex: ".{8,}"
+    message: "ハードコードされたシークレットの疑い: $KEY"
+    languages: [java]
+    severity: WARNING
+    metadata:
+      category: security
+      owasp: A02:2021
+      cwe: CWE-798
+
+  # 安全でない乱数生成
+  - id: java-insecure-random
+    pattern: new java.util.Random()
+    message: "セキュリティ用途には SecureRandom を使用してください"
+    languages: [java]
+    severity: WARNING
+    metadata:
+      category: security
+      owasp: A02:2021
+      cwe: CWE-330
+
+  # XXE 脆弱性
+  - id: java-xxe-vulnerability
+    patterns:
+      - pattern: DocumentBuilderFactory.newInstance()
+      - pattern-not: |
+          $F.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+    message: "XXE 脆弱性の疑い: DOCTYPE を無効化してください"
+    languages: [java]
+    severity: ERROR
+    metadata:
+      category: security
+      owasp: A05:2021
+      cwe: CWE-611
+
+  # デバッグログへの機密情報出力
+  - id: java-log-sensitive-data
+    patterns:
+      - pattern: $LOG.info(..., $X, ...)
+      - pattern: $LOG.debug(..., $X, ...)
+    metavariable-regex:
+      metavariable: $X
+      regex: "(?i)(password|token|secret|credential)"
+    message: "機密情報をログ出力している可能性があります"
+    languages: [java]
+    severity: WARNING
+    metadata:
+      category: security
+      owasp: A09:2021
+
+  # Kubernetes クライアントの安全でない使用
+  - id: java-k8s-insecure-client
+    pattern: |
+      new DefaultKubernetesClient()
+    message: "Kubernetes クライアントは設定から生成するか、CDI インジェクションを使用してください"
+    languages: [java]
+    severity: WARNING
+    metadata:
+      category: security
+      owasp: A05:2021
+
+  # 安全でないデシリアライゼーション (ObjectInputStream)
+  - id: java-insecure-deserialization
+    pattern: new ObjectInputStream(...)
+    message: "安全でないデシリアライゼーションの疑い: 信頼できるデータのみ使用してください"
+    languages: [java]
+    severity: ERROR
+    metadata:
+      category: security
+      owasp: A08:2021
+      cwe: CWE-502

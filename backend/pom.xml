@@ -13,8 +13,9 @@
     <compiler-plugin.version>3.12.1</compiler-plugin.version>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <quarkus.platform.version>3.8.4</quarkus.platform.version>
-    <surefire-plugin.version>3.2.5</surefire-plugin.version>
+    <surefire-plugin.version>3.5.6</surefire-plugin.version>
   </properties>
 
   <dependencyManagement>
@@ -81,6 +82,11 @@
       <artifactId>rest-assured</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-jacoco</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -119,8 +125,114 @@
             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
             <maven.home>${maven.home}</maven.home>
           </systemPropertyVariables>
+          <includes>
+            <include>**/*Test.java</include>
+          </includes>
         </configuration>
       </plugin>
+
+      <!-- JaCoCo: コードカバレッジ計測 -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.12</version>
+        <executions>
+          <execution>
+            <id>jacoco-prepare-agent</id>
+            <goals><goal>prepare-agent</goal></goals>
+            <configuration>
+              <destFile>${project.build.directory}/jacoco-unit.exec</destFile>
+            </configuration>
+          </execution>
+          <execution>
+            <id>jacoco-merge</id>
+            <phase>verify</phase>
+            <goals><goal>merge</goal></goals>
+            <configuration>
+              <destFile>${project.build.directory}/jacoco-merged.exec</destFile>
+              <fileSets>
+                <fileSet>
+                  <directory>${project.build.directory}</directory>
+                  <includes>
+                    <include>jacoco-unit.exec</include>
+                    <include>jacoco-quarkus.exec</include>
+                  </includes>
+                </fileSet>
+              </fileSets>
+            </configuration>
+          </execution>
+          <execution>
+            <id>jacoco-merged-report</id>
+            <phase>verify</phase>
+            <goals><goal>report</goal></goals>
+            <configuration>
+              <dataFile>${project.build.directory}/jacoco-merged.exec</dataFile>
+              <outputDirectory>${project.build.directory}/jacoco-merged-report</outputDirectory>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Checkstyle -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <configLocation>checkstyle.xml</configLocation>
+          <failsOnError>true</failsOnError>
+          <consoleOutput>true</consoleOutput>
+          <excludes>**/test/**/*</excludes>
+        </configuration>
+      </plugin>
+
+      <!-- PMD -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-pmd-plugin</artifactId>
+        <version>3.25.0</version>
+        <configuration>
+          <targetJdk>21</targetJdk>
+          <outputDirectory>${project.build.directory}</outputDirectory>
+          <failurePriority>2</failurePriority>
+          <printFailingErrors>true</printFailingErrors>
+          <excludes>
+            <exclude>**/*Test.java</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+
+      <!-- Maven Clean -->
+      <plugin>
+        <artifactId>maven-clean-plugin</artifactId>
+        <configuration>
+          <failOnError>false</failOnError>
+        </configuration>
+      </plugin>
+
+      <!-- HTML Test Report Generator -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.4.1</version>
+        <executions>
+          <execution>
+            <id>generate-report</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>python3</executable>
+              <arguments>
+                <argument>${project.basedir}/src/test/scripts/generate-report.py</argument>
+                <argument>${project.build.directory}</argument>
+                <argument>${project.artifactId}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
     </plugins>
   </build>
 </project>
