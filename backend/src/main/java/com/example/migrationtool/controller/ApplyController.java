@@ -91,10 +91,11 @@ public class ApplyController {
                 for (GenericKubernetesResource gkr : items) {
                     String kind = gkr.getKind();
                     String name = gkr.getMetadata() != null ? gkr.getMetadata().getName() : "unknown";
-                    String ns = (gkr.getMetadata() != null
-                            && gkr.getMetadata().getNamespace() != null
-                            && !gkr.getMetadata().getNamespace().isBlank())
-                            ? gkr.getMetadata().getNamespace() : namespace;
+                    // リクエストの namespace で常に上書き（YAML 内の namespace が古い/存在しない場合の対策）
+                    String ns = namespace;
+                    if (gkr.getMetadata() != null) {
+                        gkr.getMetadata().setNamespace(ns);
+                    }
                     try {
                         ResourceDefinitionContext rdc = buildRdc(gkr.getApiVersion(), kind);
                         client.genericKubernetesResources(rdc).inNamespace(ns).withName(name).patch(ctx, gkr);
