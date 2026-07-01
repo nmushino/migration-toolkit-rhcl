@@ -5,7 +5,14 @@ import com.example.migrationtool.entity.ProjectEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
@@ -63,7 +70,9 @@ public class HistoryController {
     @Operation(summary = "Get a specific conversion history entry")
     public Response getHistoryById(@PathParam("id") Long id) {
         ConversionHistoryEntity history = ConversionHistoryEntity.findById(id);
-        if (history == null) return Response.status(Response.Status.NOT_FOUND).build();
+        if (history == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
         return Response.ok(history).build();
     }
 
@@ -81,7 +90,9 @@ public class HistoryController {
     @Operation(summary = "Download exported YAML as ZIP")
     public Response downloadYaml(@PathParam("id") Long id) {
         ConversionHistoryEntity entity = ConversionHistoryEntity.findById(id);
-        if (entity == null) return Response.status(Response.Status.NOT_FOUND).build();
+        if (entity == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
 
         try {
             // exportedYaml は JSON: {filename → yamlContent}

@@ -5,7 +5,11 @@ import com.example.migrationtool.dto.ValidationResult.ValidationItem;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.yaml.snakeyaml.Yaml;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @ApplicationScoped
 public class ValidationService {
@@ -30,7 +34,9 @@ public class ValidationService {
             String filename = entry.getKey();
             String content = entry.getValue();
 
-            if (!filename.endsWith(".yaml")) continue;
+            if (!filename.endsWith(".yaml")) {
+                continue;
+            }
 
             result.items.addAll(validateYamlSyntax(filename, content));
             result.items.addAll(validateCrd(filename, content));
@@ -60,10 +66,12 @@ public class ValidationService {
         try {
             List<Map<String, Object>> docs = loadAllDocs(content);
             int count = docs.size();
-            String detail = count > 1 ? "Valid YAML syntax (" + count + " documents)" : "Valid YAML syntax";
+            String detail = count > 1
+                    ? "Valid YAML syntax (" + count + " documents)" : "Valid YAML syntax";
             return List.of(new ValidationItem("YAML Syntax: " + filename, "OK", detail));
         } catch (Exception e) {
-            return List.of(new ValidationItem("YAML Syntax: " + filename, "ERROR", "Invalid YAML: " + e.getMessage()));
+            return List.of(new ValidationItem(
+                    "YAML Syntax: " + filename, "ERROR", "Invalid YAML: " + e.getMessage()));
         }
     }
 
@@ -74,12 +82,15 @@ public class ValidationService {
             List<ValidationItem> items = new ArrayList<>();
             for (Map<String, Object> doc : docs) {
                 String apiVersion = (String) doc.get("apiVersion");
-                if (apiVersion == null) continue;
+                if (apiVersion == null) {
+                    continue;
+                }
                 boolean known = KNOWN_CRDS.stream().anyMatch(apiVersion::startsWith);
                 if (known) {
                     items.add(new ValidationItem("CRD: " + apiVersion, "OK", "Known CRD group"));
                 } else {
-                    items.add(new ValidationItem("CRD: " + apiVersion, "WARNING", "Unknown CRD - verify it is installed in the cluster"));
+                    items.add(new ValidationItem("CRD: " + apiVersion, "WARNING",
+                            "Unknown CRD - verify it is installed in the cluster"));
                 }
             }
             return items;
@@ -95,12 +106,15 @@ public class ValidationService {
             List<ValidationItem> items = new ArrayList<>();
             for (Map<String, Object> doc : docs) {
                 Map<String, Object> metadata = (Map<String, Object>) doc.get("metadata");
-                if (metadata == null) continue;
+                if (metadata == null) {
+                    continue;
+                }
                 String kind = (String) doc.get("kind");
                 String label = kind != null ? filename + " (" + kind + ")" : filename;
                 String ns = (String) metadata.get("namespace");
                 if (ns == null || ns.isBlank()) {
-                    items.add(new ValidationItem("Namespace: " + label, "WARNING", "No namespace set, will use default namespace"));
+                    items.add(new ValidationItem("Namespace: " + label, "WARNING",
+                            "No namespace set, will use default namespace"));
                 } else {
                     items.add(new ValidationItem("Namespace: " + label, "OK", "Namespace: " + ns));
                 }
@@ -122,15 +136,20 @@ public class ValidationService {
                 if ("HTTPRoute".equals(kind)) {
                     Map<String, Object> spec = (Map<String, Object>) doc.get("spec");
                     if (spec != null) {
-                        List<Map<String, Object>> parentRefs = (List<Map<String, Object>>) spec.get("parentRefs");
+                        List<Map<String, Object>> parentRefs =
+                                (List<Map<String, Object>>) spec.get("parentRefs");
                         if (parentRefs != null) {
                             for (Map<String, Object> ref : parentRefs) {
                                 String refName = (String) ref.get("name");
                                 boolean gatewayExists = allFiles.containsKey("gateway.yaml");
                                 if (gatewayExists) {
-                                    items.add(new ValidationItem("Reference: Gateway " + refName, "OK", "Referenced Gateway found in package"));
+                                    items.add(new ValidationItem(
+                                            "Reference: Gateway " + refName, "OK",
+                                            "Referenced Gateway found in package"));
                                 } else {
-                                    items.add(new ValidationItem("Reference: Gateway " + refName, "WARNING", "Referenced Gateway not in package - ensure it exists in cluster"));
+                                    items.add(new ValidationItem(
+                                            "Reference: Gateway " + refName, "WARNING",
+                                            "Referenced Gateway not in package - ensure it exists in cluster"));
                                 }
                             }
                         }
@@ -140,15 +159,20 @@ public class ValidationService {
                 if ("AuthPolicy".equals(kind)) {
                     boolean httprouteExists = allFiles.containsKey("httproute.yaml");
                     if (httprouteExists) {
-                        items.add(new ValidationItem("Reference: AuthPolicy -> HTTPRoute", "OK", "HTTPRoute found in package"));
+                        items.add(new ValidationItem(
+                                "Reference: AuthPolicy -> HTTPRoute", "OK",
+                                "HTTPRoute found in package"));
                     } else {
-                        items.add(new ValidationItem("Reference: AuthPolicy -> HTTPRoute", "WARNING", "HTTPRoute not in package"));
+                        items.add(new ValidationItem(
+                                "Reference: AuthPolicy -> HTTPRoute", "WARNING",
+                                "HTTPRoute not in package"));
                     }
                 }
             }
 
             if (content.contains("REPLACE_ME")) {
-                items.add(new ValidationItem("Secret Values: " + filename, "WARNING", "Contains placeholder values - update before applying"));
+                items.add(new ValidationItem("Secret Values: " + filename, "WARNING",
+                        "Contains placeholder values - update before applying"));
             }
 
         } catch (Exception e) {

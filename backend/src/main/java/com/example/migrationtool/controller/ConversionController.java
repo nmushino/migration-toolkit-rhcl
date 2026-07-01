@@ -5,16 +5,25 @@ import com.example.migrationtool.entity.ConversionHistoryEntity;
 import com.example.migrationtool.entity.ProjectEntity;
 import com.example.migrationtool.model.ApiService;
 import com.example.migrationtool.model.CompatibilityResult;
-import com.example.migrationtool.service.*;
+import com.example.migrationtool.service.CompatibilityService;
+import com.example.migrationtool.service.ConversionService;
+import com.example.migrationtool.service.ThreeScaleExportService;
+import com.example.migrationtool.service.ValidationService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Path("/api/convert")
 @Produces(MediaType.APPLICATION_JSON)
@@ -56,9 +65,11 @@ public class ConversionController {
 
         for (String serviceId : request.serviceIds) {
             try {
-                ApiService service = exportService.exportService(request.threescaleUrl, request.accessToken, serviceId);
+                ApiService service = exportService.exportService(
+                        request.threescaleUrl, request.accessToken, serviceId);
                 CompatibilityResult compatibility = compatibilityService.check(service);
-                Map<String, String> yamlFiles = conversionService.convert(service, namespace, request.externalBackendUrl);
+                Map<String, String> yamlFiles = conversionService.convert(
+                        service, namespace, request.externalBackendUrl);
 
                 String name = service.systemName != null ? service.systemName : service.name;
                 name = name.toLowerCase().replaceAll("[^a-z0-9]+", "-");

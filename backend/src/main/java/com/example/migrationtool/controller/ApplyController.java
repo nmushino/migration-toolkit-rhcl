@@ -4,7 +4,14 @@ import com.example.migrationtool.entity.ConversionHistoryEntity;
 import com.example.migrationtool.util.Messages;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
-import io.fabric8.kubernetes.api.model.rbac.*;
+import io.fabric8.kubernetes.api.model.rbac.ClusterRole;
+import io.fabric8.kubernetes.api.model.rbac.ClusterRoleBuilder;
+import io.fabric8.kubernetes.api.model.rbac.PolicyRule;
+import io.fabric8.kubernetes.api.model.rbac.PolicyRuleBuilder;
+import io.fabric8.kubernetes.api.model.rbac.Role;
+import io.fabric8.kubernetes.api.model.rbac.RoleBinding;
+import io.fabric8.kubernetes.api.model.rbac.RoleBindingBuilder;
+import io.fabric8.kubernetes.api.model.rbac.RoleBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.base.PatchContext;
 import io.fabric8.kubernetes.client.dsl.base.PatchType;
@@ -12,14 +19,23 @@ import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -108,7 +124,9 @@ public class ApplyController {
                             GenericKubernetesResource live = client.genericKubernetesResources(rdc)
                                     .inNamespace(ns).withName(name).get();
                             if (live != null) {
-                                if (exportedSb.length() > 0) exportedSb.append("\n---\n");
+                                if (exportedSb.length() > 0) {
+                                    exportedSb.append("\n---\n");
+                                }
                                 exportedSb.append(Serialization.asYaml(live));
                             }
                         } catch (Exception ex2) {
@@ -276,8 +294,16 @@ public class ApplyController {
 
         RoleBinding binding = new RoleBindingBuilder()
                 .withNewMetadata().withName(saName + "-" + roleName).withNamespace(namespace).endMetadata()
-                .withNewRoleRef().withApiGroup("rbac.authorization.k8s.io").withKind("Role").withName(roleName).endRoleRef()
-                .addNewSubject().withKind("ServiceAccount").withName(saName).withNamespace(saNamespace).endSubject()
+                .withNewRoleRef()
+                    .withApiGroup("rbac.authorization.k8s.io")
+                    .withKind("Role")
+                    .withName(roleName)
+                .endRoleRef()
+                .addNewSubject()
+                    .withKind("ServiceAccount")
+                    .withName(saName)
+                    .withNamespace(saNamespace)
+                .endSubject()
                 .build();
 
         // Authorino SA が対象 namespace の Secrets を読めるよう RoleBinding を追加
@@ -356,21 +382,24 @@ public class ApplyController {
         String result = yaml
                 .replace("apiVersion: kuadrant.io/v1beta2", "apiVersion: kuadrant.io/v1")
                 .replace("apiVersion: kuadrant.io/v1beta1", "apiVersion: kuadrant.io/v1")
-                .replace("apiVersion: gateway.networking.k8s.io/v1beta1", "apiVersion: gateway.networking.k8s.io/v1");
+                .replace("apiVersion: gateway.networking.k8s.io/v1beta1",
+                        "apiVersion: gateway.networking.k8s.io/v1");
         result = moveCredentialsOutOfApiKey(result);
         return result;
     }
 
     private String moveCredentialsOutOfApiKey(String yaml) {
         Pattern pattern = Pattern.compile(
-            "(?m)(^([ \\t]+)apiKey:\\n" +
-            "(?:\\2[ \\t]+(?!credentials:).*\\n)*)" +
-            "(\\2[ \\t]+credentials:\\n" +
-            "(?:\\2[ \\t]{2,}.*\\n)*)"
+            "(?m)(^([ \\t]+)apiKey:\\n"
+            + "(?:\\2[ \\t]+(?!credentials:).*\\n)*)"
+            + "(\\2[ \\t]+credentials:\\n"
+            + "(?:\\2[ \\t]{2,}.*\\n)*)"
         );
 
         Matcher m = pattern.matcher(yaml);
-        if (!m.find()) return yaml;
+        if (!m.find()) {
+            return yaml;
+        }
 
         StringBuffer sb = new StringBuffer();
         m.reset();
@@ -413,11 +442,19 @@ public class ApplyController {
     }
 
     private String toPlural(String kind) {
-        if (kind == null) return "unknowns";
+        if (kind == null) {
+            return "unknowns";
+        }
         String lower = kind.toLowerCase();
-        if (lower.endsWith("policy"))  return lower.substring(0, lower.length() - 6) + "policies";
-        if (lower.endsWith("status"))  return lower + "es";
-        if (lower.endsWith("s"))       return lower + "es";
+        if (lower.endsWith("policy")) {
+            return lower.substring(0, lower.length() - 6) + "policies";
+        }
+        if (lower.endsWith("status")) {
+            return lower + "es";
+        }
+        if (lower.endsWith("s")) {
+            return lower + "es";
+        }
         if (lower.length() >= 2) {
             char y = lower.charAt(lower.length() - 1);
             char prev = lower.charAt(lower.length() - 2);

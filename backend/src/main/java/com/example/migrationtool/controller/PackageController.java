@@ -1,12 +1,14 @@
 package com.example.migrationtool.controller;
 
 import com.example.migrationtool.entity.ConversionHistoryEntity;
-import com.example.migrationtool.model.ApiService;
-import com.example.migrationtool.service.ConversionService;
 import com.example.migrationtool.service.PackageService;
-import com.example.migrationtool.service.ThreeScaleExportService;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -59,7 +61,8 @@ public class PackageController {
                 ? history.serviceName.toLowerCase().replaceAll("[^a-z0-9]+", "-")
                 : "service-" + historyId;
 
-        Map<String, String> files = Map.of("all-resources.yaml", history.yamlContent != null ? history.yamlContent : "");
+        Map<String, String> files = Map.of(
+                "all-resources.yaml", history.yamlContent != null ? history.yamlContent : "");
         byte[] zipBytes = packageService.createZip(packageName, files);
 
         return Response.ok(zipBytes)

@@ -2,12 +2,20 @@ package com.example.migrationtool.service;
 
 import com.example.migrationtool.client.ThreeScaleClient;
 import com.example.migrationtool.dto.ConnectionRequest;
-import com.example.migrationtool.model.*;
+import com.example.migrationtool.model.ApiService;
+import com.example.migrationtool.model.Authentication;
+import com.example.migrationtool.model.Backend;
+import com.example.migrationtool.model.MappingRule;
+import com.example.migrationtool.model.Metric;
+import com.example.migrationtool.model.Policy;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.rest.client.RestClientBuilder;
 
 import java.net.URI;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 @ApplicationScoped
 public class ThreeScaleExportService {
@@ -32,7 +40,9 @@ public class ThreeScaleExportService {
 
             for (Map<String, Object> svcWrapper : serviceList) {
                 Map<String, Object> svc = (Map<String, Object>) svcWrapper.get("service");
-                if (svc == null) continue;
+                if (svc == null) {
+                    continue;
+                }
 
                 ApiService service = new ApiService();
                 service.id = String.valueOf(svc.get("id"));
@@ -110,7 +120,9 @@ public class ThreeScaleExportService {
             List<MappingRule> rules = new ArrayList<>();
             for (Map<String, Object> rw : ruleList) {
                 Map<String, Object> r = (Map<String, Object>) rw.get("mapping_rule");
-                if (r == null) r = rw;
+                if (r == null) {
+                    r = rw;
+                }
                 MappingRule rule = new MappingRule();
                 rule.id = String.valueOf(r.get("id"));
                 rule.httpMethod = (String) r.get("http_method");
@@ -132,7 +144,9 @@ public class ThreeScaleExportService {
             List<Metric> metrics = new ArrayList<>();
             for (Map<String, Object> mw : metricList) {
                 Map<String, Object> m = (Map<String, Object>) mw.get("metric");
-                if (m == null) m = mw;
+                if (m == null) {
+                    m = mw;
+                }
                 Metric metric = new Metric();
                 metric.id = String.valueOf(m.get("id"));
                 metric.name = (String) m.get("friendly_name");
@@ -153,7 +167,9 @@ public class ThreeScaleExportService {
             List<Backend> backends = new ArrayList<>();
             for (Map<String, Object> bw : backendList) {
                 Map<String, Object> b = (Map<String, Object>) bw.get("backend_api");
-                if (b == null) continue;
+                if (b == null) {
+                    continue;
+                }
                 Backend backend = new Backend();
                 backend.id = String.valueOf(b.get("id"));
                 backend.name = (String) b.get("name");

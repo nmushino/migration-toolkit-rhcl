@@ -1,10 +1,12 @@
 package com.example.migrationtool.service;
 
-import com.example.migrationtool.model.*;
+import com.example.migrationtool.model.ApiService;
+import com.example.migrationtool.model.MappingRule;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.security.SecureRandom;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @ApplicationScoped
 public class ConversionService {
@@ -26,11 +28,13 @@ public class ConversionService {
 
         BackendType backendType = detectBackendType(backendUrl);
         String externalHost = backendType == BackendType.EXTERNAL ? extractHostname(backendUrl) : null;
-        String internalService = backendType == BackendType.INTERNAL ? extractInternalService(backendUrl, name) : null;
+        String internalService = backendType == BackendType.INTERNAL
+                ? extractInternalService(backendUrl, name) : null;
         int internalPort = backendType == BackendType.INTERNAL ? extractPort(backendUrl, 8080) : 8080;
 
         files.put("gateway.yaml",    generateGateway(name, namespace));
-        files.put("httproute.yaml",  generateHttpRoute(name, namespace, service, backendType, externalHost, internalService, internalPort));
+        files.put("httproute.yaml",  generateHttpRoute(
+                name, namespace, service, backendType, externalHost, internalService, internalPort));
         files.put("policy.yaml",     generateAuthPolicy(name, namespace, service));
         files.put("secret.yaml",     generateSecret(name, namespace, service));
         files.put("configmap.yaml",  generateConfigMap(name, namespace, service, backendUrl));
@@ -62,22 +66,34 @@ public class ConversionService {
      *   https?://external...   → EXTERNAL
      */
     BackendType detectBackendType(String url) {
-        if (url == null || url.isBlank()) return BackendType.INTERNAL;
+        if (url == null || url.isBlank()) {
+            return BackendType.INTERNAL;
+        }
         String host = extractHostname(url);
-        if (host == null) return BackendType.INTERNAL;
+        if (host == null) {
+            return BackendType.INTERNAL;
+        }
         // *.svc または *.svc.cluster.local → 内部
-        if (host.endsWith(".svc") || host.endsWith(".svc.cluster.local")) return BackendType.INTERNAL;
+        if (host.endsWith(".svc") || host.endsWith(".svc.cluster.local")) {
+            return BackendType.INTERNAL;
+        }
         // ドットを含まないシンプルなホスト名（例: my-service）→ 内部
-        if (!host.contains(".")) return BackendType.INTERNAL;
+        if (!host.contains(".")) {
+            return BackendType.INTERNAL;
+        }
         return BackendType.EXTERNAL;
     }
 
     /** URL からホスト名を抽出する。失敗時は null。 */
     private String extractHostname(String url) {
-        if (url == null || url.isBlank()) return null;
+        if (url == null || url.isBlank()) {
+            return null;
+        }
         try {
             String s = url.trim();
-            if (!s.contains("://")) s = "https://" + s;
+            if (!s.contains("://")) {
+                s = "https://" + s;
+            }
             return new java.net.URI(s).getHost();
         } catch (Exception e) {
             return null;
@@ -91,17 +107,23 @@ public class ConversionService {
      */
     private String extractInternalService(String url, String name) {
         String host = extractHostname(url);
-        if (host == null || host.isBlank()) return name + "-backend";
+        if (host == null || host.isBlank()) {
+            return name + "-backend";
+        }
         // "svc.cluster.local" サフィックスを除去して先頭のサービス名だけ返す
         return host.split("\\.")[0];
     }
 
     /** URL からポート番号を抽出する。失敗時はデフォルト値を返す。 */
     private int extractPort(String url, int defaultPort) {
-        if (url == null || url.isBlank()) return defaultPort;
+        if (url == null || url.isBlank()) {
+            return defaultPort;
+        }
         try {
             String s = url.trim();
-            if (!s.contains("://")) s = "http://" + s;
+            if (!s.contains("://")) {
+                s = "http://" + s;
+            }
             int port = new java.net.URI(s).getPort();
             return port > 0 ? port : defaultPort;
         } catch (Exception e) {
@@ -366,7 +388,9 @@ spec:
         byte[] buf = new byte[bytes];
         new SecureRandom().nextBytes(buf);
         StringBuilder sb = new StringBuilder(bytes * 2);
-        for (byte b : buf) sb.append(String.format("%02x", b));
+        for (byte b : buf) {
+            sb.append(String.format("%02x", b));
+        }
         return sb.toString();
     }
 
@@ -514,7 +538,8 @@ ServiceEntry・DestinationRule・URLRewrite フィルターは不要なため生
         };
 
         String fileList = backendType == BackendType.EXTERNAL
-                ? "| serviceentry.yaml | Istio ServiceEntry + ExternalName Service for external backend |\n| destinationrule.yaml | TLS origination to external host |"
+                ? "| serviceentry.yaml | Istio ServiceEntry + ExternalName Service for external backend |\n"
+                + "| destinationrule.yaml | TLS origination to external host |"
                 : "";
 
         return """
@@ -573,7 +598,9 @@ kubectl get httproute %s-route -n %s
     // ─────────────────────────────────────────────
 
     private String toKebabCase(String input) {
-        if (input == null) return "service";
+        if (input == null) {
+            return "service";
+        }
         return input.toLowerCase()
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("^-|-$", "");

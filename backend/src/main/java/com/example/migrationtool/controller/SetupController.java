@@ -6,7 +6,13 @@ import io.fabric8.kubernetes.client.dsl.base.PatchContext;
 import io.fabric8.kubernetes.client.dsl.base.PatchType;
 import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -148,8 +154,8 @@ public class SetupController {
                 return new StepResult(stepName, false, "No Gateway found in namespace " + namespace);
             }
             boolean annotated = list.getItems().stream().anyMatch(gw ->
-                    gw.getMetadata().getAnnotations() != null &&
-                    gw.getMetadata().getAnnotations().containsKey("kuadrant.io/namespace"));
+                    gw.getMetadata().getAnnotations() != null
+                    && gw.getMetadata().getAnnotations().containsKey("kuadrant.io/namespace"));
             return new StepResult(stepName, annotated, annotated ? "Annotation present" : "Annotation missing");
         } catch (Exception e) {
             return new StepResult(stepName, false, e.getMessage());

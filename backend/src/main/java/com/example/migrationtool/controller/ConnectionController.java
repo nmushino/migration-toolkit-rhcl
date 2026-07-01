@@ -3,7 +3,10 @@ package com.example.migrationtool.controller;
 import com.example.migrationtool.dto.ConnectionRequest;
 import com.example.migrationtool.service.ThreeScaleExportService;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -37,10 +40,12 @@ public class ConnectionController {
 
         boolean connected = exportService.testConnection(request);
         if (connected) {
-            return Response.ok(Map.of("success", true, "message", "Successfully connected to 3scale")).build();
+            return Response.ok(
+                    Map.of("success", true, "message", "Successfully connected to 3scale")).build();
         } else {
             return Response.status(Response.Status.BAD_GATEWAY)
-                    .entity(Map.of("success", false, "message", "Failed to connect to 3scale. Check URL and access token."))
+                    .entity(Map.of("success", false,
+                            "message", "Failed to connect to 3scale. Check URL and access token."))
                     .build();
         }
     }

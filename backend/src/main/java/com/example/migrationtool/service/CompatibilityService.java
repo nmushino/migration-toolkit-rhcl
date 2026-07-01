@@ -1,6 +1,10 @@
 package com.example.migrationtool.service;
 
-import com.example.migrationtool.model.*;
+import com.example.migrationtool.model.ApiService;
+import com.example.migrationtool.model.Backend;
+import com.example.migrationtool.model.CompatibilityItem;
+import com.example.migrationtool.model.CompatibilityResult;
+import com.example.migrationtool.model.Policy;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.ArrayList;
@@ -35,10 +39,20 @@ public class CompatibilityService {
             return;
         }
         switch (service.authentication.type) {
-            case "jwt" -> items.add(new CompatibilityItem("JWT Authentication", "SUPPORTED", "JWT/OIDC is fully supported"));
-            case "apiKey" -> items.add(new CompatibilityItem("API Key Authentication", "SUPPORTED", "API key authentication is supported"));
-            case "appIdKey" -> items.add(new CompatibilityItem("App ID/Key Authentication", "WARNING", "App ID/Key requires custom policy configuration"));
-            default -> items.add(new CompatibilityItem("Authentication", "WARNING", "Authentication type may require manual review"));
+            case "jwt" ->
+                items.add(new CompatibilityItem(
+                        "JWT Authentication", "SUPPORTED", "JWT/OIDC is fully supported"));
+            case "apiKey" ->
+                items.add(new CompatibilityItem(
+                        "API Key Authentication", "SUPPORTED", "API key authentication is supported"));
+            case "appIdKey" ->
+                items.add(new CompatibilityItem(
+                        "App ID/Key Authentication", "WARNING",
+                        "App ID/Key requires custom policy configuration"));
+            default ->
+                items.add(new CompatibilityItem(
+                        "Authentication", "WARNING",
+                        "Authentication type may require manual review"));
         }
     }
 
@@ -47,24 +61,40 @@ public class CompatibilityService {
             return;
         }
         for (Policy policy : service.policies) {
-            if (!policy.enabled) continue;
+            if (!policy.enabled) {
+                continue;
+            }
             switch (policy.name.toLowerCase()) {
                 case "url_rewriting", "rewrite" ->
-                    items.add(new CompatibilityItem("URL Rewrite", "SUPPORTED", "URL rewriting is supported via HTTPRoute filters"));
+                    items.add(new CompatibilityItem(
+                            "URL Rewrite", "SUPPORTED",
+                            "URL rewriting is supported via HTTPRoute filters"));
                 case "header_modification", "headers" ->
-                    items.add(new CompatibilityItem("Header Modification", "SUPPORTED", "Header manipulation is supported"));
+                    items.add(new CompatibilityItem(
+                            "Header Modification", "SUPPORTED",
+                            "Header manipulation is supported"));
                 case "cors" ->
-                    items.add(new CompatibilityItem("CORS", "SUPPORTED", "CORS policy is supported"));
+                    items.add(new CompatibilityItem(
+                            "CORS", "SUPPORTED", "CORS policy is supported"));
                 case "rate_limit", "rate-limit" ->
-                    items.add(new CompatibilityItem("Rate Limiting", "SUPPORTED", "Rate limiting supported via Kuadrant RateLimitPolicy"));
+                    items.add(new CompatibilityItem(
+                            "Rate Limiting", "SUPPORTED",
+                            "Rate limiting supported via Kuadrant RateLimitPolicy"));
                 case "lua" ->
-                    items.add(new CompatibilityItem("Lua Policy", "WARNING", "Lua scripts need manual conversion to WASM or custom policies"));
+                    items.add(new CompatibilityItem(
+                            "Lua Policy", "WARNING",
+                            "Lua scripts need manual conversion to WASM or custom policies"));
                 case "soap" ->
-                    items.add(new CompatibilityItem("SOAP", "UNSUPPORTED", "SOAP policies are not supported in Connectivity Link"));
+                    items.add(new CompatibilityItem(
+                            "SOAP", "UNSUPPORTED",
+                            "SOAP policies are not supported in Connectivity Link"));
                 case "camel" ->
-                    items.add(new CompatibilityItem("Camel Integration", "UNSUPPORTED", "Camel integrations require separate migration"));
+                    items.add(new CompatibilityItem(
+                            "Camel Integration", "UNSUPPORTED",
+                            "Camel integrations require separate migration"));
                 default ->
-                    items.add(new CompatibilityItem("Policy: " + policy.name, "WARNING", "Policy requires manual review"));
+                    items.add(new CompatibilityItem(
+                            "Policy: " + policy.name, "WARNING", "Policy requires manual review"));
             }
         }
     }
@@ -77,9 +107,13 @@ public class CompatibilityService {
         boolean hasWildcard = service.mappingRules.stream()
                 .anyMatch(r -> r.pattern != null && r.pattern.contains("{?}"));
         if (hasWildcard) {
-            items.add(new CompatibilityItem("Mapping Rules", "WARNING", "Wildcard patterns may need adjustment for HTTPRoute"));
+            items.add(new CompatibilityItem(
+                    "Mapping Rules", "WARNING",
+                    "Wildcard patterns may need adjustment for HTTPRoute"));
         } else {
-            items.add(new CompatibilityItem("Mapping Rules", "SUPPORTED", service.mappingRules.size() + " mapping rules will be converted to HTTPRoute rules"));
+            items.add(new CompatibilityItem(
+                    "Mapping Rules", "SUPPORTED",
+                    service.mappingRules.size() + " mapping rules will be converted to HTTPRoute rules"));
         }
     }
 
@@ -90,15 +124,20 @@ public class CompatibilityService {
         }
         for (Backend backend : service.backends) {
             if (backend.privateEndpoint != null && backend.privateEndpoint.startsWith("https://")) {
-                items.add(new CompatibilityItem("Backend TLS", "SUPPORTED", "HTTPS backend endpoint supported"));
+                items.add(new CompatibilityItem(
+                        "Backend TLS", "SUPPORTED", "HTTPS backend endpoint supported"));
             } else {
-                items.add(new CompatibilityItem("Backend: " + backend.name, "SUPPORTED", "Backend URL will be configured in HTTPRoute"));
+                items.add(new CompatibilityItem(
+                        "Backend: " + backend.name, "SUPPORTED",
+                        "Backend URL will be configured in HTTPRoute"));
             }
         }
     }
 
     private int calculateScore(List<CompatibilityItem> items) {
-        if (items.isEmpty()) return 100;
+        if (items.isEmpty()) {
+            return 100;
+        }
         int total = 0;
         int max = items.size() * SCORE_SUPPORTED;
         for (CompatibilityItem item : items) {
@@ -112,8 +151,12 @@ public class CompatibilityService {
     }
 
     private String scoreToLevel(int score) {
-        if (score >= 80) return "HIGH";
-        if (score >= 50) return "MEDIUM";
+        if (score >= 80) {
+            return "HIGH";
+        }
+        if (score >= 50) {
+            return "MEDIUM";
+        }
         return "LOW";
     }
 }

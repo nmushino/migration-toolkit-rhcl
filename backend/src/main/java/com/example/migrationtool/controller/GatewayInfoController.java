@@ -4,7 +4,10 @@ import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -99,9 +102,13 @@ public class GatewayInfoController {
     private String extractHostname(GenericKubernetesResource gw) {
         try {
             Map<String, Object> status = (Map<String, Object>) gw.getAdditionalProperties().get("status");
-            if (status == null) return null;
+            if (status == null) {
+                return null;
+            }
             List<Map<String, Object>> addresses = (List<Map<String, Object>>) status.get("addresses");
-            if (addresses == null || addresses.isEmpty()) return null;
+            if (addresses == null || addresses.isEmpty()) {
+                return null;
+            }
             Object value = addresses.get(0).get("value");
             return value != null ? value.toString() : null;
         } catch (Exception e) {
