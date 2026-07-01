@@ -1,4 +1,4 @@
-# Red Hat Connectivity Link Migration Toolkit
+# Migration Toolkit for Red Hat Connectivity Link
 
 3scale から Red Hat Connectivity Link へ移行するための GUI ツールキットです。  
 Quarkus バックエンド + React/PatternFly フロントエンド で構成されています。
