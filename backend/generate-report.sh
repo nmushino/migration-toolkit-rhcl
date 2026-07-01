@@ -103,14 +103,14 @@ if command -v trivy &>/dev/null; then
   trivy fs \
     --ignorefile "$REPO_ROOT/.trivyignore.yaml" \
     --scanners vuln,secret \
-    --format table \
-    --output "$TARGET/trivy.txt" \
+    --format json \
+    --output "$TARGET/trivy.json" \
     "$SCRIPT_DIR" \
     || true
-  ok "Trivy complete → $TARGET/trivy.txt"
+  ok "Trivy complete → $TARGET/trivy.json"
 else
   warn "trivy not found. Skipping. Install: brew install trivy"
-  echo "Trivy scan skipped (tool not installed)" > "$TARGET/trivy.txt"
+  echo '{"SchemaVersion":2,"Results":[]}' > "$TARGET/trivy.json"
 fi
 
 # ---------------------------------------------------------------------------

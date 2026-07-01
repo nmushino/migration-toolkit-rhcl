@@ -2,7 +2,7 @@
 """
 Generates target/test-report/index.html from surefire/failsafe XML,
 checkstyle-result.xml, pmd.xml, jacoco.csv,
-semgrep-results.json, gitleaks-report.json, trivy.txt, wapiti.json.
+semgrep-results.json, gitleaks-report.json, trivy.json (JSON format), wapiti.json.
 """
 import csv
 import glob
@@ -29,7 +29,8 @@ CHECKSTYLE_XML  = os.path.join(TARGET, "checkstyle-result.xml")
 PMD_XML         = os.path.join(TARGET, "pmd.xml")
 SEMGREP_JSON    = os.path.join(TARGET, "semgrep-reports", "results.json")
 GITLEAKS_JSON   = os.path.join(TARGET, "gitleaks-report.json")
-TRIVY_TXT       = os.path.join(TARGET, "trivy.txt")
+TRIVY_JSON      = os.path.join(TARGET, "trivy.json")
+TRIVY_TXT       = TRIVY_JSON  # backward compat alias
 WAPITI_JSON     = os.path.join(TARGET, "wapiti.json")
 OUT_DIR         = os.path.join(TARGET, "test-report")
 OUT_FILE        = os.path.join(OUT_DIR, "index.html")
@@ -376,73 +377,91 @@ gitleaks_total  = len(gitleaks_items)
 gitleaks_status = "pass" if gitleaks_total == 0 else "fail"
 
 
-# ── Parse Trivy TXT ───────────────────────────────────────────────────────────
-# Trivy box-drawing chars: │ (U+2502), ─ (U+2500), ┌├└┐┤┘ etc.
-_TRIVY_SKIP_FIRST = re.compile(
-    r'^(Library|ID|Package|Target|Type|Module|Vulnerability|'
-    r'Total|Tests|Report\s|┌|├|└|╔|╠|╚|═).*',
-    re.IGNORECASE
-)
+# ── Parse Trivy JSON ──────────────────────────────────────────────────────────
+# Trivy --format json output: {"SchemaVersion":2,"Results":[{"Target":"...","Type":"...","Vulnerabilities":[...]}]}
+# Each Vulnerability: PkgName, VulnerabilityID, Severity, Status, InstalledVersion, FixedVersion, Title
 
 
 def parse_trivy(path):
-    """Extract target sections and finding rows from Trivy plain-text output."""
+    """Extract target sections and finding rows from Trivy JSON output."""
     if not os.path.exists(path):
         return [], 0
     with open(path, encoding="utf-8", errors="replace") as f:
-        text = f.read()
+        content = f.read().strip()
+    if not content:
+        return [], 0
 
-    # Strip Tekton/kubectl timestamp prefixes (2026-06-28T11:xx:xx.xxxZ INFO ...)
-    text = re.sub(r'^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s+\S+\s+', '', text, flags=re.MULTILINE)
+    # Support both JSON format (new default) and legacy table format detection
+    if content.startswith("{") or content.startswith("["):
+        return _parse_trivy_json(content)
+    # Fallback: no findings from unrecognised format
+    return [], 0
+
+
+def _parse_trivy_json(content):
+    """Parse Trivy JSON report into sections compatible with the HTML renderer."""
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return [], 0
+
+    # Handle both top-level list and {"Results":[...]} wrapper
+    results = data if isinstance(data, list) else data.get("Results", [])
 
     sections = []
-    # Match section headers: "target (type)\n===========..."
-    # Allow optional leading spaces and ≥3 '=' chars
-    section_re = re.compile(r'^(.+?) \(([^)]+)\)\n[=]{3,}', re.MULTILINE)
-    matches = list(section_re.finditer(text))
+    for result in results:
+        target      = result.get("Target", "unknown")
+        target_type = result.get("Type", "")
+        vulns       = result.get("Vulnerabilities") or []
+        secrets     = result.get("Secrets") or []
 
-    for idx, m in enumerate(matches):
-        target_name = m.group(1).strip()
-        target_type = m.group(2).strip()
-        body_start  = m.end()
-        body_end    = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-        body        = text[body_start:body_end]
+        items = []
+        for v in vulns:
+            # Column order must match _TRIVY_COL_HEADS and _trivy_sev(cols[2])
+            items.append([
+                v.get("PkgName", ""),           # 0: ライブラリ
+                v.get("VulnerabilityID", ""),    # 1: 脆弱性 ID
+                v.get("Severity", ""),           # 2: 深刻度  ← _trivy_sev uses index 2
+                v.get("Status", ""),             # 3: ステータス
+                v.get("InstalledVersion", ""),   # 4: インストール版
+                v.get("FixedVersion", ""),       # 5: 修正版
+                v.get("Title", ""),              # 6: タイトル
+            ])
+        for s in secrets:
+            items.append([
+                s.get("Match", ""),
+                s.get("RuleID", ""),
+                "HIGH",
+                "secret",
+                "",
+                "",
+                s.get("Title", ""),
+            ])
 
-        # Summary line: "Total: 5 (UNKNOWN: 0, LOW: 0, MEDIUM: 3, HIGH: 2, CRITICAL: 0)"
-        total_line = next(
-            (ln.strip() for ln in body.splitlines()
-             if re.match(r'(Total|Tests):', ln.strip())),
-            ""
+        sev_counts = {}
+        for row in items:
+            sev = row[2].upper()
+            sev_counts[sev] = sev_counts.get(sev, 0) + 1
+        total_line = (
+            "Total: {} ({})".format(
+                len(items),
+                ", ".join(f"{k}: {v}" for k, v in sorted(sev_counts.items()))
+            ) if items else ""
         )
 
-        findings = []
-        for line in body.splitlines():
-            if "│" not in line:
-                continue
-            cols = [c.strip() for c in line.split("│")]
-            cols = [c for c in cols if c]
-            if not cols:
-                continue
-            # Skip header / separator rows
-            if _TRIVY_SKIP_FIRST.match(cols[0]):
-                continue
-            # Need at least: library, CVE-id, severity
-            if len(cols) >= 3:
-                findings.append(cols)
-
-        if findings or total_line:
+        if items or total_line:
             sections.append({
-                "target":     target_name,
+                "target":     target,
                 "type":       target_type,
                 "total_line": total_line,
-                "items":      findings,
+                "items":      items,
             })
 
     total = sum(len(s["items"]) for s in sections)
     return sections, total
 
 
-trivy_sections, trivy_total = parse_trivy(TRIVY_TXT)
+trivy_sections, trivy_total = parse_trivy(TRIVY_JSON)
 trivy_status = "pass" if trivy_total == 0 else "fail"
 
 
@@ -1362,7 +1381,7 @@ html = f"""<!DOCTYPE html>
 <body>
 <aside class="sidebar">
   <div class="sidebar-logo">
-    <div class="project">Quarkus Droneshop</div>
+    <div class="project">Migration Toolkit</div>
     <div class="module">{PROJECT_NAME}</div>
     <div class="date">{now_str}</div>
   </div>

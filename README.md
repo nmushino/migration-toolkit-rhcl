@@ -463,6 +463,17 @@ Flyway migrations:
 - `backend/src/main/resources/messages_ja.properties` / `messages_en.properties`
 - `Messages` bean (`@ApplicationScoped`) injected into controllers
 
+## Testing
+
+### Run all tools + generate HTML report
+./generate-report.sh
+
+### To include Wapiti (DAST)
+./generate-report.sh --with-wapiti --wapiti-url http://your-app:8080
+
+### Maven only (Checkstyle + PMD + JaCoCo + Unit Test)
+mvn verify checkstyle:checkstyle pmd:pmd
+
 ---
 
 *Maintained by Noriaki Mushino — nmushino@redhat.com*
@@ -935,3 +946,14 @@ Flyway マイグレーション:
 - Java 標準 `ResourceBundle` を使用
 - `backend/src/main/resources/messages_ja.properties` / `messages_en.properties`
 - `Messages` Bean (`@ApplicationScoped`) が各コントローラに注入される
+
+## テスト
+
+### 全ツール実行 + HTML レポート生成
+./generate-report.sh
+
+### Wapiti (DAST) も含める場合
+./generate-report.sh --with-wapiti --wapiti-url http://your-app:8080
+
+### Maven のみ (Checkstyle + PMD + JaCoCo + Unit Test)
+mvn verify checkstyle:checkstyle pmd:pmd
