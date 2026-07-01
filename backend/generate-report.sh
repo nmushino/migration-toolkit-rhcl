@@ -27,6 +27,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET="$SCRIPT_DIR/target"
 ARTIFACT_ID="migration-tool"
 
+MVN="${MVN:-$(command -v mvn 2>/dev/null || echo /usr/local/maven-3.9.3/bin/mvn)}"
+
 WITH_WAPITI=false
 WAPITI_URL="http://localhost:8080"
 
@@ -47,7 +49,7 @@ warn() { echo "⚠ $*"; }
 # ---------------------------------------------------------------------------
 log "Maven build / Unit Test / Checkstyle / PMD / JaCoCo..."
 cd "$SCRIPT_DIR"
-mvn verify \
+"$MVN" verify \
   checkstyle:checkstyle \
   pmd:pmd \
   -Dquarkus.test.profile=test \
