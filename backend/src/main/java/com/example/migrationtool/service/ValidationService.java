@@ -147,7 +147,7 @@ public class ValidationService {
                 }
             }
 
-            if (content.contains("REPLACE_ME") || content.contains("REPLACE_WITH_ACTUAL_API_KEY")) {
+            if (content.contains("REPLACE_ME")) {
                 items.add(new ValidationItem("Secret Values: " + filename, "WARNING", "Contains placeholder values - update before applying"));
             }
 

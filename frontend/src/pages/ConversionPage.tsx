@@ -159,8 +159,8 @@ const ConversionPage: React.FC<Props> = ({ appState, setAppState }) => {
                             {t('conversion.externalNote', '外部サービス向けに以下のリソースが追加生成されます：')}
                           </div>
                           <ul style={{ margin: 0, paddingLeft: '18px', lineHeight: '1.8' }}>
-                            <li><code>envoyfilter.yaml</code> — Istio Gateway の Envoy に外部 HTTPS cluster を直接注入（STRICT_DNS + TLS SNI）</li>
-                            <li><code>httproute.yaml</code> — <code>Host</code> ヘッダーを外部ホスト名に書き換えるフィルターを追加</li>
+                            <li dangerouslySetInnerHTML={{ __html: t('conversion.externalNoteEnvoy') }} />
+                            <li dangerouslySetInnerHTML={{ __html: t('conversion.externalNoteRoute') }} />
                           </ul>
                         </div>
                       </>
@@ -226,7 +226,7 @@ const ConversionPage: React.FC<Props> = ({ appState, setAppState }) => {
                                             key={f}
                                             isCompact
                                             color={isExternalFile ? 'orange' : 'blue'}
-                                            title={isExternalFile ? '外部サービス向けリソース' : undefined}
+                                            title={isExternalFile ? t('conversion.externalFileTitle') : undefined}
                                           >
                                             {f}
                                           </Label>

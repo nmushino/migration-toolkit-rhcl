@@ -26,6 +26,7 @@ import {
   CopyIcon,
 } from '@patternfly/react-icons';
 import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
 import { importApi, downloadApi, applyApi, gatewayApi } from '../api/client';
 
 interface YamlFile { name: string; content: string; }
@@ -43,6 +44,7 @@ interface TestInfo {
   gatewayName: string;
   routes: RouteInfo[];
   auth: AuthInfo;
+  apiKey?: string;
 }
 
 /**
@@ -83,7 +85,12 @@ function parseTestInfo(edits: EditMap): TestInfo {
     };
   }
 
-  return { gatewayName, routes, auth };
+  // secret.yaml から api_key 値を抽出（stringData または data）
+  const secretYaml = edits['secret.yaml'] ?? '';
+  const apiKeyMatch = secretYaml.match(/api_key:\s*"?([a-zA-Z0-9+/=_-]{8,})"?/);
+  const apiKey = apiKeyMatch ? apiKeyMatch[1] : undefined;
+
+  return { gatewayName, routes, auth, apiKey };
 }
 
 /* ── テスト情報パネル ── */
@@ -92,28 +99,58 @@ interface TestInfoPanelProps {
   namespace: string;
 }
 const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) => {
+  const { t } = useTranslation();
   const [gatewayUrl, setGatewayUrl] = useState<string | null>(null);
   const [gwLoading, setGwLoading]   = useState(false);
   const [gwError, setGwError]       = useState<string | null>(null);
+  const [gwPhase, setGwPhase]       = useState<'lb' | 'dns' | 'done'>('lb');
   const [copied, setCopied]         = useState<string | null>(null);
-  const [apiKeyValue, setApiKeyValue] = useState('your-api-key');
+  const [apiKeyValue, setApiKeyValue] = useState(testInfo.apiKey ?? 'your-api-key');
   const [jwtValue, setJwtValue]       = useState('your-jwt-token');
+
+  // secret.yaml の api_key が変わったら追随する（ただし手動入力済みの場合は上書きしない）
+  React.useEffect(() => {
+    if (testInfo.apiKey) setApiKeyValue(testInfo.apiKey);
+  }, [testInfo.apiKey]);
   const [customPath, setCustomPath]   = useState('');
 
   const fetchGatewayUrl = useCallback(async () => {
     if (!testInfo.gatewayName || !namespace) return;
-    setGwLoading(true); setGwError(null);
-    try {
-      const res = await gatewayApi.getInfo(namespace, testInfo.gatewayName);
-      const data = res.data;
-      if (data.ready) {
-        setGatewayUrl(data.httpUrl);
-      } else {
-        setGwError('Gateway の外部 URL がまだ割り当てられていません。しばらく待ってから再試行してください。');
-      }
-    } catch (e: any) {
-      setGwError(e.response?.data?.error ?? e.message);
-    } finally { setGwLoading(false); }
+    setGwLoading(true); setGwError(null); setGwPhase('lb');
+
+    // Phase 1: LB アドレス割り当て待ち（最大 60 秒）
+    let hostname = '';
+    for (let i = 0; i < 12; i++) {
+      try {
+        const res = await gatewayApi.getInfo(namespace, testInfo.gatewayName);
+        if (res.data.ready) { hostname = res.data.hostname; break; }
+      } catch (_e) { /* Gateway 未作成 — retry */ }
+      if (i < 11) await new Promise(r => setTimeout(r, 5000));
+    }
+    if (!hostname) {
+      setGwError(t('import.testPanel.gwNotReady'));
+      setGwLoading(false);
+      return;
+    }
+
+    // Phase 2: DNS 伝播待ち（最大 5 分、10 秒間隔）
+    setGwPhase('dns');
+    for (let i = 0; i < 30; i++) {
+      try {
+        const res = await gatewayApi.getInfo(namespace, testInfo.gatewayName);
+        if (res.data.dnsReady) {
+          setGatewayUrl(res.data.httpUrl);
+          setGwPhase('done');
+          setGwLoading(false);
+          return;
+        }
+      } catch (_e) { /* retry */ }
+      if (i < 29) await new Promise(r => setTimeout(r, 10000));
+    }
+    // タイムアウト — DNS は解決できていないが URL は表示する
+    setGatewayUrl(`http://${hostname}`);
+    setGwPhase('done');
+    setGwLoading(false);
   }, [testInfo.gatewayName, namespace]);
 
   // マウント時に自動取得
@@ -155,22 +192,35 @@ const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) =>
     <Card style={{ border: '1px solid #0066cc33', background: '#f0f7ff' }}>
       <CardBody>
         <Title headingLevel="h3" size="md" style={{ marginBottom: 16, color: '#0066cc' }}>
-          接続情報 &amp; curl テスト
+          {t('import.testPanel.title')}
         </Title>
 
         {/* Gateway URL */}
         <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fff', borderRadius: 6, border: '1px solid #d2d2d2' }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Gateway URL</div>
-          {gwLoading && <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: '#6a6e73' }}><Spinner size="sm" /> 取得中...</div>}
-          {gwError && (
-            <div style={{ fontSize: 13, color: '#c9190b', marginBottom: 8 }}>{gwError}</div>
+
+          {/* フェーズ別ステータス表示 */}
+          {gwLoading && gwPhase === 'lb' && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: '#6a6e73', marginBottom: 8 }}>
+              <Spinner size="sm" /> {t('import.testPanel.gwWaitingLb')}
+            </div>
           )}
+          {gwLoading && gwPhase === 'dns' && (
+            <div style={{ background: '#fff8e1', border: '1px solid #f0c000', borderRadius: 4, padding: '10px 14px', marginBottom: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: '#795600', marginBottom: 4 }}>
+                <Spinner size="sm" /> {t('import.testPanel.gwWaitingDns')}
+              </div>
+            </div>
+          )}
+
+          {gwError && <div style={{ fontSize: 13, color: '#c9190b', marginBottom: 8 }}>{gwError}</div>}
+
           {!gwLoading && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {gatewayUrl ? (
                 <>
                   <code style={{ fontSize: 13, background: '#f5f5f5', padding: '4px 8px', borderRadius: 4 }}>{gatewayUrl}</code>
-                  <Button variant="plain" aria-label="コピー" style={{ padding: 4 }}
+                  <Button variant="plain" aria-label={t('import.testPanel.ariaCopy')} style={{ padding: 4 }}
                     onClick={() => copyToClipboard(gatewayUrl, 'gwurl')}>
                     <CopyIcon /> {copied === 'gwurl' ? '✓' : ''}
                   </Button>
@@ -178,25 +228,24 @@ const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) =>
               ) : (
                 <span style={{ fontSize: 13, color: '#6a6e73' }}>{gwError ? '' : '—'}</span>
               )}
-              <Button variant="link" onClick={fetchGatewayUrl} isDisabled={gwLoading}
-                style={{ fontSize: 12 }}>
-                再取得
+              <Button variant="link" onClick={fetchGatewayUrl} isDisabled={gwLoading} style={{ fontSize: 12 }}>
+                {t('import.testPanel.refetch')}
               </Button>
             </div>
           )}
-          {infoRow('Gateway 名', <code style={{ fontSize: 12 }}>{testInfo.gatewayName}</code>)}
+          {infoRow(t('import.testPanel.gatewayName'), <code style={{ fontSize: 12 }}>{testInfo.gatewayName}</code>)}
           {infoRow('Namespace', <code style={{ fontSize: 12 }}>{namespace}</code>)}
         </div>
 
         {/* 認証情報 */}
         <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fff', borderRadius: 6, border: '1px solid #d2d2d2' }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>認証方式</div>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{t('import.testPanel.authTitle')}</div>
           {testInfo.auth.type === 'apiKey' && (
             <>
-              {infoRow('タイプ', <Label isCompact color="blue">API Key</Label>)}
-              {infoRow('ヘッダー', <code style={{ fontSize: 12 }}>{testInfo.auth.headerName}: {testInfo.auth.prefix} &lt;key&gt;</code>)}
+              {infoRow(t('import.testPanel.type'), <Label isCompact color="blue">API Key</Label>)}
+              {infoRow(t('import.testPanel.header'), <code style={{ fontSize: 12 }}>{testInfo.auth.headerName}: {testInfo.auth.prefix} &lt;key&gt;</code>)}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-                <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>API キー値</span>
+                <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>{t('import.testPanel.apiKeyValue')}</span>
                 <TextInput
                   value={apiKeyValue}
                   onChange={(_e, v) => setApiKeyValue(v)}
@@ -208,10 +257,10 @@ const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) =>
           )}
           {testInfo.auth.type === 'jwt' && (
             <>
-              {infoRow('タイプ', <Label isCompact color="purple">JWT (Bearer)</Label>)}
-              {infoRow('ヘッダー', <code style={{ fontSize: 12 }}>Authorization: Bearer &lt;token&gt;</code>)}
+              {infoRow(t('import.testPanel.type'), <Label isCompact color="purple">JWT (Bearer)</Label>)}
+              {infoRow(t('import.testPanel.header'), <code style={{ fontSize: 12 }}>Authorization: Bearer &lt;token&gt;</code>)}
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-                <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>JWT トークン</span>
+                <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>{t('import.testPanel.jwtToken')}</span>
                 <TextInput
                   value={jwtValue}
                   onChange={(_e, v) => setJwtValue(v)}
@@ -221,47 +270,57 @@ const TestInfoPanel: React.FC<TestInfoPanelProps> = ({ testInfo, namespace }) =>
               </div>
             </>
           )}
-          {testInfo.auth.type === 'none' && infoRow('タイプ', <Label isCompact color="grey">認証なし</Label>)}
+          {testInfo.auth.type === 'none' && infoRow(t('import.testPanel.type'), <Label isCompact color="grey">{t('import.testPanel.authNone')}</Label>)}
         </div>
 
-        {/* curl コマンド */}
+        {/* curl コマンド — DNS 解決完了後のみ表示 */}
         <div style={{ padding: '12px 16px', background: '#fff', borderRadius: 6, border: '1px solid #d2d2d2' }}>
-          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>curl テストコマンド</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>追加パス</span>
-            <TextInput
-              value={customPath}
-              onChange={(_e, v) => setCustomPath(v)}
-              placeholder="/api/your/path"
-              style={{ flex: 1, fontSize: 13 }}
-            />
-          </div>
-          {testInfo.routes.map((route, i) => {
-            const cmd = buildCurl(route);
-            const key = `curl-${i}`;
-            return (
-              <div key={i} style={{ marginBottom: i < testInfo.routes.length - 1 ? 12 : 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Label isCompact color="blue">{route.method}</Label>
-                  <code style={{ fontSize: 12, color: '#6a6e73' }}>{route.path}</code>
-                </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <pre style={{
-                    flex: 1, margin: 0, padding: '8px 12px', fontSize: 12,
-                    background: '#1b1d21', color: '#d4d4d4', borderRadius: 4,
-                    fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                    overflowX: 'auto',
-                  }}>
-                    {cmd}
-                  </pre>
-                  <Button variant="plain" aria-label="コピー" style={{ padding: 6, flexShrink: 0, marginTop: 2 }}
-                    onClick={() => copyToClipboard(cmd, key)}>
-                    {copied === key ? <CheckCircleIcon color="var(--pf-v5-global--success-color--100)" /> : <CopyIcon />}
-                  </Button>
-                </div>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>{t('import.testPanel.curlTitle')}</div>
+          {(gwLoading || !gatewayUrl) ? (
+            <div style={{ fontSize: 13, color: '#6a6e73', display: 'flex', gap: 8, alignItems: 'center' }}>
+              {gwLoading
+                ? <><Spinner size="sm" /> {gwPhase === 'dns' ? t('import.testPanel.gwWaitingDns') : t('import.testPanel.gwWaitingLb')}</>
+                : t('import.testPanel.gwNotReady')}
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ minWidth: 140, fontSize: 13, color: '#6a6e73', flexShrink: 0 }}>{t('import.testPanel.customPath')}</span>
+                <TextInput
+                  value={customPath}
+                  onChange={(_e, v) => setCustomPath(v)}
+                  placeholder="/api/your/path"
+                  style={{ flex: 1, fontSize: 13 }}
+                />
               </div>
-            );
-          })}
+              {testInfo.routes.map((route, i) => {
+                const cmd = buildCurl(route);
+                const key = `curl-${i}`;
+                return (
+                  <div key={i} style={{ marginBottom: i < testInfo.routes.length - 1 ? 12 : 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <Label isCompact color="blue">{route.method}</Label>
+                      <code style={{ fontSize: 12, color: '#6a6e73' }}>{route.path}</code>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <pre style={{
+                        flex: 1, margin: 0, padding: '8px 12px', fontSize: 12,
+                        background: '#1b1d21', color: '#d4d4d4', borderRadius: 4,
+                        fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                        overflowX: 'auto',
+                      }}>
+                        {cmd}
+                      </pre>
+                      <Button variant="plain" aria-label={t('import.testPanel.ariaCopy')} style={{ padding: 6, flexShrink: 0, marginTop: 2 }}
+                        onClick={() => copyToClipboard(cmd, key)}>
+                        {copied === key ? <CheckCircleIcon color="var(--pf-v5-global--success-color--100)" /> : <CopyIcon />}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       </CardBody>
     </Card>
@@ -278,11 +337,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
       return (
         <div style={{ padding: 32 }}>
           <div style={{ background: '#fff1f1', border: '1px solid #c9190b', borderRadius: 6, padding: 20 }}>
-            <p style={{ margin: 0, fontWeight: 700, color: '#c9190b' }}>エラーが発生しました</p>
+            <p style={{ margin: 0, fontWeight: 700, color: '#c9190b' }}>{i18next.t('import.errorTitle')}</p>
             <pre style={{ marginTop: 8, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{this.state.msg}</pre>
             <button onClick={() => this.setState({ hasError: false, msg: '' })}
               style={{ marginTop: 12, padding: '6px 16px', background: '#c9190b', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-              再試行
+              {i18next.t('import.btnRetry')}
             </button>
           </div>
         </div>
@@ -295,6 +354,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 /* ── シンプルなタブ（Tabs コンポーネントを使わない） ── */
 interface SimpleTabs { files: YamlFile[]; edits: EditMap; onEdit: (name: string, val: string) => void; }
 const SimpleYamlTabs: React.FC<SimpleTabs> = ({ files, edits, onEdit }) => {
+  const { t } = useTranslation();
   const [active, setActive] = useState(0);
   const [editMode, setEditMode] = useState(false);
 
@@ -335,7 +395,7 @@ const SimpleYamlTabs: React.FC<SimpleTabs> = ({ files, edits, onEdit }) => {
             color: editMode ? '#fff' : '#333',
           }}
         >
-          {editMode ? '表示モード' : '編集モード'}
+          {editMode ? t('import.viewMode') : t('import.editMode')}
         </button>
       </div>
 
@@ -422,7 +482,7 @@ const ImportPageInner: React.FC = () => {
       const res = await importApi.uploadZip(file);
       const yamlMap: Record<string, string> = res.data?.files ?? {};
       if (Object.keys(yamlMap).length === 0) {
-        setError('ZIPにYAMLファイルが含まれていません'); setLoading(false); return;
+        setError(t('import.errorNoYaml')); setLoading(false); return;
       }
       const loaded = Object.entries(yamlMap)
         .map(([name, content]) => ({ name, content: String(content) }))
@@ -430,9 +490,8 @@ const ImportPageInner: React.FC = () => {
       const init: EditMap = {};
       loaded.forEach(f => { init[f.name] = f.content; });
       setFiles(loaded); setEdits(init);
-      // 読み込み直後に外部バックエンドを検出したら事前通知
       if (detectExternalBackend(init)) {
-        setPortFixNotice('外部バックエンドリソースを検出しました。「Namespace を適用」を実行すると httproute.yaml の backendRefs.port が自動的に 443 に変換されます');
+        setPortFixNotice('portFixExternal');
       }
     } catch (e: any) {
       setError(t('import.errorUpload', { message: e.response?.data?.error ?? e.message }));
@@ -469,9 +528,9 @@ const ImportPageInner: React.FC = () => {
 
     setEdits(updated);
     if (portConverted) {
-      setPortFixNotice('外部バックエンドを検出: httproute.yaml の backendRefs.port を 8080 → 443 に変換しました');
+      setPortFixNotice('portFixed443');
     } else if (isExternal) {
-      setPortFixNotice('外部バックエンドを検出: httproute.yaml の port は既に 443 です');
+      setPortFixNotice('portAlready443');
     } else {
       setPortFixNotice(null);
     }
@@ -622,16 +681,16 @@ const ImportPageInner: React.FC = () => {
                     {portFixNotice && (
                       <div style={{
                         marginTop: 12, padding: '8px 12px', borderRadius: 4,
-                        background: portFixNotice.includes('変換しました') ? '#f0f7e6' : '#f0f7ff',
-                        border: `1px solid ${portFixNotice.includes('変換しました') ? '#3e8635' : '#0066cc'}`,
+                        background: portFixNotice === 'portFixed443' ? '#f0f7e6' : '#f0f7ff',
+                        border: `1px solid ${portFixNotice === 'portFixed443' ? '#3e8635' : '#0066cc'}`,
                         fontSize: 13,
-                        color: portFixNotice.includes('変換しました') ? '#1e4f18' : '#004080',
+                        color: portFixNotice === 'portFixed443' ? '#1e4f18' : '#004080',
                         display: 'flex', alignItems: 'center', gap: 8,
                       }}>
-                        {portFixNotice.includes('変換しました')
+                        {portFixNotice === 'portFixed443'
                           ? <CheckCircleIcon color="#3e8635" />
                           : <span style={{ fontWeight: 700 }}>ℹ</span>}
-                        {portFixNotice}
+                        {t(`import.${portFixNotice}`)}
                       </div>
                     )}
                     <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>

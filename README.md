@@ -43,6 +43,9 @@ Quarkus バックエンド + React/PatternFly フロントエンド で構成さ
 
 ## 前提条件・必要ツール
 
+下記ツールの利用が前提となっています
+https://github.com/maximilianoPizarro/from-3scale-to-connectivity-link
+
 ### ローカル開発環境
 
 | ツール | バージョン | 用途 |
@@ -521,6 +524,10 @@ Built with a Quarkus backend and a React/PatternFly frontend.
 - 3scale Admin Portal URL and a Personal Access Token
 
 ---
+
+### Required tools
+Use of the following tool is required:
+https://github.com/maximilianoPizarro/from-3scale-to-connectivity-link
 
 ## Quick Start
 

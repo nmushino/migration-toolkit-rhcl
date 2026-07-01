@@ -2,6 +2,7 @@ import React, { useState, Component, ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import i18n from './i18n';
+import i18next from 'i18next';
 import {
   Page,
   PageSidebar,
@@ -74,7 +75,7 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, EBState> {
             padding: '20px 24px',
           }}>
             <p style={{ margin: 0, fontWeight: 700, color: '#c9190b', fontSize: '15px' }}>
-              ページの表示中にエラーが発生しました
+              {i18next.t('app.errorTitle')}
             </p>
             <p style={{ margin: '8px 0 0', fontFamily: 'monospace', fontSize: '13px', color: '#3c3f42', wordBreak: 'break-word' }}>
               {this.state.message}
@@ -86,7 +87,7 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, EBState> {
                 background: '#c9190b', color: '#fff', border: 'none', borderRadius: '4px',
               }}
             >
-              再試行
+              {i18next.t('app.btnRetry')}
             </button>
           </div>
         </div>

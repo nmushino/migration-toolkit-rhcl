@@ -140,6 +140,13 @@ public class ApplyController {
         long successCount = resourceResults.stream().filter(ResourceResult::success).count();
         long failureCount = resourceResults.stream().filter(r -> !r.success()).count();
 
+        // Secret が適用された場合、Authorino を再起動して新しい API キーを認識させる
+        boolean secretApplied = resourceResults.stream()
+                .anyMatch(r -> r.success() && "Secret".equals(r.kind()));
+        if (secretApplied) {
+            restartAuthorino();
+        }
+
         saveHistory(source, namespace, resourceResults, exportedYamls, successCount, failureCount);
 
         boolean anySuccess = fileResults.stream().anyMatch(ApplyResult::success);
@@ -187,11 +194,42 @@ public class ApplyController {
         }
     }
 
+    private void restartAuthorino() {
+        try {
+            String authorinoNs = "kuadrant-system";
+            String deployName = "authorino";
+            var deployment = client.apps().deployments().inNamespace(authorinoNs).withName(deployName).get();
+            if (deployment == null) {
+                LOG.infof("Authorino deployment not found in %s, skipping restart", authorinoNs);
+                return;
+            }
+            // rollout restart: kubectl.kubernetes.io/restartedAt アノテーションを更新
+            String now = java.time.Instant.now().toString();
+            client.apps().deployments().inNamespace(authorinoNs).withName(deployName)
+                    .edit(d -> {
+                        var podMeta = d.getSpec().getTemplate().getMetadata();
+                        if (podMeta.getAnnotations() == null) {
+                            podMeta.setAnnotations(new java.util.HashMap<>());
+                        }
+                        podMeta.getAnnotations().put("kubectl.kubernetes.io/restartedAt", now);
+                        return d;
+                    });
+            LOG.infof("Authorino deployment restarted to reload API key Secrets");
+        } catch (Exception e) {
+            LOG.warnf("Could not restart Authorino: %s", e.getMessage());
+        }
+    }
+
     private void ensureRbac(String namespace) {
         String saName = "migration-tool-backend";
         String saNamespace = "migration-toolkit";
         String roleName = "migration-tool-istio-manager";
+        String clusterRoleName = "migration-tool-applier";
 
+        // ── ClusterRole に不足 apiGroups を補完 ──────────────────────────────
+        ensureClusterRole(clusterRoleName, saName, saNamespace);
+
+        // ── 対象 namespace への Role / RoleBinding ────────────────────────────
         PolicyRule istioRule = new PolicyRuleBuilder()
                 .withApiGroups("networking.istio.io")
                 .withResources("destinationrules", "serviceentries", "serviceentrys", "virtualservices")
@@ -224,12 +262,71 @@ public class ApplyController {
                 .addNewSubject().withKind("ServiceAccount").withName(saName).withNamespace(saNamespace).endSubject()
                 .build();
 
+        // Authorino SA が対象 namespace の Secrets を読めるよう RoleBinding を追加
+        // （ClusterRoleBinding がある場合は冗長だが namespace 再作成後の安全網として追加）
+        RoleBinding authorinoBinding = new RoleBindingBuilder()
+                .withNewMetadata()
+                    .withName("authorino-secret-reader")
+                    .withNamespace(namespace)
+                .endMetadata()
+                .withNewRoleRef()
+                    .withApiGroup("rbac.authorization.k8s.io")
+                    .withKind("ClusterRole")
+                    .withName("authorino-manager-role")
+                .endRoleRef()
+                .addNewSubject()
+                    .withKind("ServiceAccount")
+                    .withName("authorino-authorino")
+                    .withNamespace("kuadrant-system")
+                .endSubject()
+                .build();
+
         try {
             client.rbac().roles().inNamespace(namespace).createOrReplace(role);
             client.rbac().roleBindings().inNamespace(namespace).createOrReplace(binding);
+            client.rbac().roleBindings().inNamespace(namespace).createOrReplace(authorinoBinding);
             LOG.infof("RBAC ensured for namespace %s", namespace);
         } catch (Exception e) {
             LOG.warnf("Could not ensure RBAC in namespace %s: %s", namespace, e.getMessage());
+        }
+    }
+
+    private void ensureClusterRole(String clusterRoleName, String saName, String saNamespace) {
+        List<String> requiredGroups = List.of(
+                "", "apps", "networking.k8s.io", "route.openshift.io",
+                "kuadrant.io", "gateway.networking.k8s.io",
+                "networking.istio.io", "rbac.authorization.k8s.io",
+                "devportal.kuadrant.io"
+        );
+        List<String> requiredVerbs = List.of("get", "list", "create", "update", "patch", "delete");
+
+        try {
+            ClusterRole existing = client.rbac().clusterRoles().withName(clusterRoleName).get();
+
+            Set<String> currentGroups = new HashSet<>();
+            if (existing != null) {
+                for (PolicyRule r : existing.getRules()) {
+                    currentGroups.addAll(r.getApiGroups());
+                }
+            }
+
+            if (existing == null || !currentGroups.containsAll(requiredGroups)) {
+                PolicyRule fullRule = new PolicyRuleBuilder()
+                        .withApiGroups(requiredGroups.toArray(new String[0]))
+                        .withResources("*")
+                        .withVerbs(requiredVerbs.toArray(new String[0]))
+                        .build();
+
+                ClusterRole desired = new ClusterRoleBuilder()
+                        .withNewMetadata().withName(clusterRoleName).endMetadata()
+                        .withRules(fullRule)
+                        .build();
+
+                client.rbac().clusterRoles().createOrReplace(desired);
+                LOG.infof("ClusterRole %s patched with required apiGroups", clusterRoleName);
+            }
+        } catch (Exception e) {
+            LOG.warnf("Could not ensure ClusterRole %s: %s", clusterRoleName, e.getMessage());
         }
     }
 

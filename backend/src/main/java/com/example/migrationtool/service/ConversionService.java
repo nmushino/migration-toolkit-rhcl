@@ -3,6 +3,7 @@ package com.example.migrationtool.service;
 import com.example.migrationtool.model.*;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import java.security.SecureRandom;
 import java.util.*;
 
 @ApplicationScoped
@@ -33,6 +34,12 @@ public class ConversionService {
         files.put("policy.yaml",     generateAuthPolicy(name, namespace, service));
         files.put("secret.yaml",     generateSecret(name, namespace, service));
         files.put("configmap.yaml",  generateConfigMap(name, namespace, service, backendUrl));
+        files.put("apiproduct.yaml", generateApiProduct(name, namespace, service));
+
+        String authType = service.authentication != null ? service.authentication.type : "none";
+        if ("apiKey".equals(authType)) {
+            files.put("apikey.yaml", generateApiKey(name, namespace));
+        }
 
         if (backendType == BackendType.EXTERNAL) {
             files.put("serviceentry.yaml",    generateServiceEntry(name, namespace, externalHost));
@@ -173,6 +180,7 @@ spec:
   parentRefs:
     - name: %s-gateway
       namespace: %s
+      sectionName: http
   rules:
 """.formatted(name, namespace, name, name, namespace));
 
@@ -354,13 +362,19 @@ spec:
     // Secret / ConfigMap
     // ─────────────────────────────────────────────
 
+    private static String generateRandomHex(int bytes) {
+        byte[] buf = new byte[bytes];
+        new SecureRandom().nextBytes(buf);
+        StringBuilder sb = new StringBuilder(bytes * 2);
+        for (byte b : buf) sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
     private String generateSecret(String name, String namespace, ApiService service) {
         String authType = service.authentication != null ? service.authentication.type : "none";
 
         if ("apiKey".equals(authType)) {
-            // Kuadrant/Authorino がラベル selector で参照する API キー用 Secret。
-            // api_key フィールドの値がクライアントの送信する実際のキーになる。
-            // apply 前に openssl rand -hex 32 等で生成した値に置き換えること。
+            String apiKey = generateRandomHex(32);
             return """
 apiVersion: v1
 kind: Secret
@@ -372,8 +386,8 @@ metadata:
     migrated-from: 3scale
 type: Opaque
 stringData:
-  api_key: "REPLACE_WITH_ACTUAL_API_KEY"
-""".formatted(name, namespace, name);
+  api_key: "%s"
+""".formatted(name, namespace, name, apiKey);
         }
 
         return """
@@ -390,6 +404,57 @@ stringData:
   client-id: "REPLACE_ME"
   client-secret: "REPLACE_ME"
 """.formatted(name, namespace, name);
+    }
+
+    // ─────────────────────────────────────────────
+    // Kuadrant Developer Portal Resources
+    // ─────────────────────────────────────────────
+
+    private String generateApiProduct(String name, String namespace, ApiService service) {
+        String displayName = service.name != null ? service.name : name;
+        String description = service.description != null ? service.description : "Migrated from 3scale";
+        return """
+apiVersion: devportal.kuadrant.io/v1alpha1
+kind: APIProduct
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    app: %s
+    migrated-from: 3scale
+spec:
+  displayName: "%s"
+  description: "%s"
+  approvalMode: automatic
+  publishStatus: Published
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: %s-route
+  version: v1
+""".formatted(name, namespace, name, displayName, description.replace("\"", "'"), name);
+    }
+
+    private String generateApiKey(String name, String namespace) {
+        return """
+apiVersion: devportal.kuadrant.io/v1alpha1
+kind: APIKey
+metadata:
+  name: %s-api-key
+  namespace: %s
+  labels:
+    app: %s
+    migrated-from: 3scale
+spec:
+  apiProductRef:
+    name: %s
+  planTier: basic
+  requestedBy:
+    email: admin@example.com
+    userId: admin
+  secretRef:
+    name: %s-api-key
+""".formatted(name, namespace, name, name, name);
     }
 
     private String generateConfigMap(String name, String namespace, ApiService service, String backendUrl) {

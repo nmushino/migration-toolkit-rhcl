@@ -56,7 +56,7 @@ const sourceLabel = (source?: string) => {
 };
 
 const HistoryPage: React.FC = () => {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [history, setHistory]         = useState<ConversionHistory[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
@@ -120,7 +120,7 @@ const HistoryPage: React.FC = () => {
       link.click();
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
-      showToast(`ダウンロードエラー: ${e.message}`);
+      showToast(t('history.downloadError2', { message: e.message }));
     } finally {
       setDownloading(prev => ({ ...prev, [entry.id]: false }));
     }
@@ -132,10 +132,10 @@ const HistoryPage: React.FC = () => {
       await historyApi.deleteByIds(Array.from(selected));
       setSelected(new Set());
       setDeleteModal(false);
-      showToast(`${selected.size} 件を削除しました`);
+      showToast(t('history.deleteSuccess', { count: selected.size }));
       load();
     } catch (e: any) {
-      showToast(`削除エラー: ${e.message}`);
+      showToast(t('history.deleteError', { message: e.message }));
     } finally {
       setDeleting(false);
     }
@@ -167,9 +167,9 @@ const HistoryPage: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <HistoryIcon style={{ fontSize: '1.8rem', color: '#6a6e73' }} />
             <div>
-              <Title headingLevel="h1" size="2xl">変換・適用履歴</Title>
+              <Title headingLevel="h1" size="2xl">{t('history.titlePage')}</Title>
               <p style={{ margin: '4px 0 0', color: '#6a6e73', fontSize: '14px' }}>
-                ZIP インポートおよび変換フローの実行結果
+                {t('history.descriptionPage')}
               </p>
             </div>
           </div>
@@ -180,11 +180,11 @@ const HistoryPage: React.FC = () => {
                 icon={<TrashIcon />}
                 onClick={() => setDeleteModal(true)}
               >
-                選択削除 ({selected.size})
+                {t('history.btnDeleteSelected', { count: selected.size })}
               </Button>
             )}
             <Button variant="secondary" onClick={load} isDisabled={loading}>
-              再読み込み
+              {t('history.btnReload')}
             </Button>
           </div>
         </div>
@@ -203,8 +203,8 @@ const HistoryPage: React.FC = () => {
             ) : history.length === 0 ? (
               <EmptyState style={{ padding: '60px 24px' }}>
                 <EmptyStateIcon icon={CubesIcon} />
-                <Title headingLevel="h3" size="lg">履歴がありません</Title>
-                <EmptyStateBody>ZIP インポートまたは変換を実行すると履歴が記録されます</EmptyStateBody>
+                <Title headingLevel="h3" size="lg">{t('history.emptyTitle')}</Title>
+                <EmptyStateBody>{t('history.emptyBody')}</EmptyStateBody>
               </EmptyState>
             ) : (
               <>
@@ -218,14 +218,16 @@ const HistoryPage: React.FC = () => {
                       id="select-all"
                       isChecked={allChecked}
                       onChange={toggleAll}
-                      aria-label="全選択"
+                      aria-label={t('history.ariaSelectAll')}
                       style={{ marginRight: 4 }}
                     />
                     <span style={{ fontSize: 13, color: '#6a6e73' }}>
-                      {someChecked || allChecked ? `${selected.size} 件選択中` : '全選択'}
+                      {someChecked || allChecked
+                        ? t('history.selectedCount2', { count: selected.size })
+                        : t('history.selectAll')}
                     </span>
                   </div>
-                  <Badge isRead>{history.length} 件</Badge>
+                  <Badge isRead>{t('history.countBadge', { count: history.length })}</Badge>
                 </div>
 
                 {/* テーブル */}
@@ -235,12 +237,12 @@ const HistoryPage: React.FC = () => {
                       <tr style={{ borderBottom: '2px solid #d2d2d2' }}>
                         <th style={{ ...thS, width: 40 }}></th>
                         <th style={{ ...thS, width: 32 }}></th>
-                        <th style={thS}>実行日時</th>
-                        <th style={thS}>種別</th>
+                        <th style={thS}>{t('history.colDateTime')}</th>
+                        <th style={thS}>{t('history.colType')}</th>
                         <th style={thS}>Namespace</th>
-                        <th style={{ ...thS, textAlign: 'center' }}>結果</th>
-                        <th style={{ ...thS, textAlign: 'center' }}>成功/失敗</th>
-                        <th style={{ ...thS, textAlign: 'center', width: 120 }}>操作</th>
+                        <th style={{ ...thS, textAlign: 'center' }}>{t('history.colStatus')}</th>
+                        <th style={{ ...thS, textAlign: 'center' }}>{t('history.colSuccessFail')}</th>
+                        <th style={{ ...thS, textAlign: 'center', width: 120 }}>{t('history.colOps')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -265,7 +267,7 @@ const HistoryPage: React.FC = () => {
                                   id={`chk-${entry.id}`}
                                   isChecked={isSelected}
                                   onChange={() => toggleSelect(entry.id)}
-                                  aria-label={`選択 ${entry.id}`}
+                                  aria-label={t('history.ariaSelectEntry', { id: entry.id })}
                                 />
                               </td>
 
@@ -274,7 +276,7 @@ const HistoryPage: React.FC = () => {
                                 {hasFailures && (
                                   <Button variant="plain" size="sm"
                                     onClick={() => toggleExpand(entry.id)}
-                                    aria-label="詳細">
+                                    aria-label={t('history.ariaDetails')}>
                                     {isExpanded ? <AngleDownIcon /> : <AngleRightIcon />}
                                   </Button>
                                 )}
@@ -298,9 +300,9 @@ const HistoryPage: React.FC = () => {
                               {/* ステータス */}
                               <td style={{ ...tdS, textAlign: 'center' }}>
                                 <Label color={statusColor(entry.status)}>
-                                  {entry.status === 'COMPLETED' ? '成功'
-                                    : entry.status === 'FAILED' ? '失敗'
-                                    : entry.status === 'PARTIAL' ? '一部失敗'
+                                  {entry.status === 'COMPLETED' ? t('history.statusSuccess')
+                                    : entry.status === 'FAILED' ? t('history.statusFailed')
+                                    : entry.status === 'PARTIAL' ? t('history.statusPartial')
                                     : entry.status}
                                 </Label>
                               </td>
@@ -319,7 +321,7 @@ const HistoryPage: React.FC = () => {
                                       {entry.failureCount ?? 0}
                                     </span>
                                     <span style={{ color: '#8a8d90', fontSize: 11, marginLeft: 4 }}>
-                                      / {entry.totalCount}件
+                                      {t('history.totalOf', { count: entry.totalCount })}
                                     </span>
                                   </span>
                                 ) : '—'}
@@ -344,15 +346,15 @@ const HistoryPage: React.FC = () => {
                               <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
                                 <td colSpan={8} style={{ padding: '0 0 12px 72px', background: '#fff8f7' }}>
                                   <div style={{ fontSize: 13, fontWeight: 600, color: '#c9190b', marginBottom: 8 }}>
-                                    失敗リソース ({failures.length} 件)
+                                    {t('history.failedResources', { count: failures.length })}
                                   </div>
                                   <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                                     <thead>
                                       <tr style={{ color: '#6a6e73' }}>
-                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>ファイル</th>
+                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>{t('history.colFile')}</th>
                                         <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>Kind</th>
-                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>名前</th>
-                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>エラー</th>
+                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>{t('history.colName')}</th>
+                                        <th style={{ ...thS, fontWeight: 600, padding: '4px 12px' }}>{t('history.colError')}</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -388,20 +390,20 @@ const HistoryPage: React.FC = () => {
       {/* 削除確認モーダル */}
       <Modal
         variant={ModalVariant.small}
-        title="履歴の削除"
+        title={t('history.deleteTitle')}
         isOpen={deleteModal}
         onClose={() => setDeleteModal(false)}
         actions={[
           <Button key="del" variant="danger" onClick={handleDelete} isLoading={deleting}>
-            削除する
+            {t('history.btnDelete')}
           </Button>,
           <Button key="cancel" variant="link" onClick={() => setDeleteModal(false)}>
-            キャンセル
+            {t('history.btnCancel')}
           </Button>,
         ]}
       >
-        選択した <strong>{selected.size} 件</strong>の履歴を削除します。
-        保存された YAML も削除されます。この操作は元に戻せません。
+        <span dangerouslySetInnerHTML={{ __html: t('history.deleteConfirm', { count: selected.size }) }} />
+        {' '}{t('history.deleteWarn')}
       </Modal>
     </>
   );

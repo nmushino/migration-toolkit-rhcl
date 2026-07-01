@@ -11,6 +11,7 @@ import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
+import java.net.InetAddress;
 import java.util.List;
 import java.util.Map;
 
@@ -63,13 +64,15 @@ public class GatewayInfoController {
             }
 
             String hostname = extractHostname(gw);
-            boolean ready = hostname != null && !hostname.isBlank();
+            boolean lbReady  = hostname != null && !hostname.isBlank();
+            boolean dnsReady = lbReady && isDnsResolvable(hostname);
 
             return Response.ok(Map.of(
                     "hostname", hostname != null ? hostname : "",
-                    "httpUrl",  ready ? "http://"  + hostname : "",
-                    "httpsUrl", ready ? "https://" + hostname : "",
-                    "ready", ready
+                    "httpUrl",  lbReady ? "http://"  + hostname : "",
+                    "httpsUrl", lbReady ? "https://" + hostname : "",
+                    "ready",    lbReady,
+                    "dnsReady", dnsReady
             )).build();
 
         } catch (Exception e) {
@@ -78,6 +81,16 @@ public class GatewayInfoController {
                     "error", e.getMessage(),
                     "ready", false
             )).build();
+        }
+    }
+
+    /** ELB ホスト名が DNS で解決できるか確認する。 */
+    private boolean isDnsResolvable(String hostname) {
+        try {
+            InetAddress.getByName(hostname);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
