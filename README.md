@@ -468,7 +468,7 @@ Flyway マイグレーション:
 
 # English Documentation
 
-## Red Hat Connectivity Link Migration Toolkit
+## Migration Toolkit for Red Hat Connectivity Link
 
 A GUI toolkit for migrating from 3scale to Red Hat Connectivity Link.  
 Built with a Quarkus backend and a React/PatternFly frontend.
