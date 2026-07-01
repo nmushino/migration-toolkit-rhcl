@@ -1,11 +1,486 @@
 # Migration Toolkit for Red Hat Connectivity Link
 
+A GUI toolkit for migrating from 3scale to Red Hat Connectivity Link.  
+Built with a Quarkus backend and a React/PatternFly frontend.
+
+---
+
+## Table of Contents
+
+- [Screenshots](#screenshots)
+- [Prerequisites & Required Tools](#prerequisites--required-tools)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Workflow](#workflow)
+- [Features](#features)
+- [Directory Structure](#directory-structure)
+- [API Reference](#api-reference)
+- [Data Model](#data-model)
+- [Internationalization (i18n)](#internationalization-i18n)
+- [日本語ドキュメント](#日本語ドキュメント)
+
+---
+
+## Screenshots
+
+| 3scale Connection Setup | Compatibility Check |
+|:-:|:-:|
+| ![3scale Connection](.claude/images/connect.png) | ![Compatibility Check](.claude/images/apilist.png) |
+
+| YAML Generation | YAML Preview |
+|:-:|:-:|
+| ![YAML Generation](.claude/images/yaml.png) | ![YAML Preview](.claude/images/preview.png) |
+
+| Validation | Download |
+|:-:|:-:|
+| ![Validation](.claude/images/validation.png) | ![Download](.claude/images/download.png) |
+
+| ZIP Import / CL Config | curl Connectivity Test |
+|:-:|:-:|
+| ![ZIP Import](.claude/images/import.png) | ![curl Test](.claude/images/rhcltest.png) |
+
+---
+
+## Prerequisites & Required Tools
+
+### Required tools
+Use of the following tool is required:
+https://github.com/maximilianoPizarro/from-3scale-to-connectivity-link
+
+### Local Development
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Java (OpenJDK) | 21+ | Backend build |
+| Apache Maven | 3.9.x+ | Backend build |
+| Node.js | 18+ | Frontend build |
+| npm | 9+ | Frontend dependency management |
+| Docker / Podman | Latest | Container image build (local testing) |
+
+### OpenShift Cluster
+
+| Tool / Component | Version | Purpose |
+|-----------------|---------|---------|
+| OpenShift Container Platform | 4.14+ | Target deployment cluster |
+| `oc` CLI | Matching cluster version | Cluster operations |
+| CrunchyData PostgreSQL Operator | Latest | Database management (pre-install from OperatorHub) |
+| Red Hat Connectivity Link (Kuadrant) | Latest | Migration target component |
+
+> **Note**: Install the CrunchyData PostgreSQL Operator into the `openshift-operators`  
+> namespace **before** running the install script. The script detects it automatically.
+
+### 3scale Environment
+
+- 3scale Admin Portal URL and a Personal Access Token
+
+---
+
+## Quick Start
+
+### Full Deploy to OpenShift
+
+```bash
+# Deploy to a specific namespace (default: migration-toolkit)
+NAMESPACE=migration-toolkit ./deploy/install.sh
+
+# Backend only
+NAMESPACE=migration-toolkit ./deploy/install.sh --backend-only
+
+# Frontend only
+NAMESPACE=migration-toolkit ./deploy/install.sh --frontend-only
+
+# Database only
+NAMESPACE=migration-toolkit ./deploy/install.sh --db-only
+```
+
+The install script handles:
+
+1. Namespace creation
+2. Waiting for CrunchyData PostgreSQL Operator
+3. PostgreSQL cluster creation (including SCC)
+4. Backend Maven build → S2I → deployment
+5. Frontend npm build → S2I (nginx) → deployment
+6. Printing access URLs
+
+### Language Selection
+
+```bash
+# Japanese (default)
+./deploy/install.sh
+
+# Run in English
+INSTALL_LANG=en ./deploy/install.sh
+```
+
+### Local Development
+
+```bash
+# Start backend (PostgreSQL must be running on localhost:5432)
+cd backend
+mvn quarkus:dev
+
+# Start frontend (separate terminal)
+cd frontend
+npm install --legacy-peer-deps
+VITE_API_URL=http://localhost:8080 npm run dev
+```
+
+---
+
+## Architecture
+
+```
+               +----------------------+
+               |      Web UI          |
+               |  (React/PatternFly)  |
+               +----------+-----------+
+                          |
+                    REST API (JSON)
+                          |
+        +-----------------+------------------+
+        |     Quarkus Backend (Java 21)      |
+        |                                    |
+        | ① 3scale Export                    |
+        | ② Parser / Compatibility Checker   |
+        | ③ Converter (YAML Generator)       |
+        | ④ Validation                       |
+        | ⑤ Package Download (ZIP)           |
+        | ⑥ Import / Apply to Cluster        |
+        |    (auto RBAC provisioning)        |
+        | ⑦ ZIP Import Conversion History    |
+        | ⑧ Gateway Info                     |
+        | ⑨ Namespace Setup                  |
+        +-----------------+------------------+
+                    |               |
+       from-3scale-to-connectivity  PostgreSQL
+            -link (Adapter)         (CrunchyData)
+                    |
+          Connectivity Link YAML
+         (Gateway / HTTPRoute / AuthPolicy /
+          RateLimitPolicy / DestinationRule /
+          ServiceEntry / Secret / ConfigMap)
+```
+
+**Technology Stack**
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18, PatternFly 5, Vite, TypeScript, react-i18next |
+| Backend | Quarkus 3.8.4 (Java 21), RESTEasy Reactive, Hibernate ORM Panache |
+| Database | PostgreSQL (managed by CrunchyData Operator) |
+| Kubernetes client | Fabric8 Kubernetes Client 6.7.x |
+| OpenAPI | SmallRye OpenAPI + Swagger UI (`/q/swagger-ui`) |
+| DB Migrations | Flyway (V1–V3) |
+| Deployment | OpenShift S2I, nginx (frontend static serving) |
+
+---
+
+## Workflow
+
+```
+① Configure 3scale connection (URL / Access Token / Tenant / Namespace)
+      ↓
+② Fetch API list (Service / Backend / MappingRule / Metrics / Policies / Auth)
+      ↓
+③ Select APIs to migrate
+      ↓
+④ Compatibility Check (scoring: JWT / Rewrite / Lua Policy / SOAP, etc.)
+      ↓
+⑤ Generate YAML (via from-3scale-to-connectivity-link adapter)
+      ↓
+⑥ Preview / edit YAML in browser
+      ↓
+⑦ Validation (YAML syntax / CRD / Namespace / Secret / Reference)
+      ↓
+⑧ Download as ZIP
+      ↓
+⑨ ZIP Import → apply to cluster
+     · Auto-create Role/RoleBinding in target Namespace
+     · Apply via Server-Side Apply
+     · Export applied resources (-o yaml equivalent) and save to history
+      ↓
+⑩ Review conversion history (success/failure counts, error details, re-download ZIP)
+```
+
+---
+
+## Features
+
+### 1. 3scale Connection Setup
+
+Input fields:
+- 3scale Admin Portal URL
+- Personal Access Token
+- Tenant name (optional)
+- Target OpenShift Namespace
+
+3scale APIs called by the backend:
+```
+GET /admin/api/services.json
+GET /admin/api/backends.json
+GET /admin/api/proxy_configs
+GET /admin/api/policies
+```
+
+### 2. API List
+
+Information retrieved:
+- Service basics (ID / name / deployment option)
+- Backend (Private Endpoint)
+- Mapping Rules
+- Metrics
+- Policies
+- Authentication type (API Key / OIDC / JWT, etc.)
+
+### 3. Compatibility Check
+
+Evaluates whether each API policy/feature can be migrated to Connectivity Link:
+
+| Result | Meaning |
+|--------|---------|
+| ✔ SUPPORTED | Migrates as-is |
+| ⚠ WARNING | Manual adjustment required |
+| × UNSUPPORTED | Not supported (requires custom handling) |
+
+A Migration Score (0–100%) quantifies the overall migration effort.
+
+### 4. YAML Generation
+
+Resources generated via the `from-3scale-to-connectivity-link` adapter:
+
+```
+{service-name}/
+  gateway.yaml         # Kuadrant Gateway
+  httproute.yaml       # HTTPRoute
+  policy.yaml          # AuthPolicy / RateLimitPolicy
+  secret.yaml          # Credentials (REPLACE_ME placeholders)
+  configmap.yaml       # Configuration values
+  destinationrule.yaml # Istio DestinationRule (TLS)
+  serviceentry.yaml    # Istio ServiceEntry (external service)
+  README.md
+```
+
+> Replace `REPLACE_ME` placeholders in `secret.yaml` with actual values before applying.
+
+### 5. YAML Preview
+
+View and edit all generated files in a code viewer inside the browser.
+
+### 6. Validation
+
+Automated checks on generated YAML:
+- ✔ YAML syntax
+- ✔ CRD (API version)
+- ✔ Namespace configuration
+- ✔ Resource reference consistency
+- ✔ Secret placeholder detection
+
+### 7. ZIP Download
+
+Download all generated files as a ZIP archive.  
+Example filename: `customer-api.zip`
+
+### 8. ZIP Import / Apply Connectivity Link Config
+
+Upload a ZIP and:
+- Preview and edit YAML in the browser
+- Bulk-replace the target Namespace
+- Apply directly to the cluster via `oc apply` (through backend)
+
+Automatic processing on apply:
+- Auto-create `migration-tool-istio-manager` Role and RoleBinding in the target Namespace
+- Grants permissions for Istio / Kuadrant / Gateway API / core API resources
+- Automatic `apiVersion` normalization (e.g., `kuadrant.io/v1beta2 → v1`)
+- Exports each applied resource from the cluster and saves to history
+
+Test command feature:
+- Generates a curl command for connectivity verification after apply
+- Custom path input field to append a path to the base URL
+
+### 9. Conversion History (ZIP Import)
+
+A history record is created for every ZIP Import run:
+
+| Field | Description |
+|-------|-------------|
+| Timestamp | Execution date/time |
+| Type | ZIP Import / Convert |
+| Namespace | Target Namespace |
+| Status | COMPLETED / PARTIAL / FAILED |
+| Success count | Number of successfully applied resources |
+| Failure count | Number of failed resources |
+| Error details | Filename, Kind, Name, error message per failure (expandable row) |
+| YAML download | ZIP of resources exported from cluster after apply |
+
+Actions:
+- Checkbox selection for bulk delete (to reduce DB size)
+- Per-row ZIP download button to retrieve applied YAML
+
+### 10. Gateway Info
+
+Retrieves Gateway resource list and Listener information from the cluster in real time.
+
+### 11. Namespace Setup
+
+Automatically applies resources required for Connectivity Link to operate in the target Namespace.
+
+---
+
+## Directory Structure
+
+```
+migration-toolkit-rhcl/
+├── backend/                    # Quarkus backend (Java 21)
+│   └── src/main/java/com/example/migrationtool/
+│       ├── controller/         # REST endpoints
+│       │   ├── ConnectionController.java   # 3scale connection test
+│       │   ├── ExportController.java       # Service list & compatibility check
+│       │   ├── ConversionController.java   # YAML generation
+│       │   ├── ValidationController.java   # YAML validation
+│       │   ├── PackageController.java      # ZIP download
+│       │   ├── ApplyController.java        # Cluster apply, history save, auto RBAC
+│       │   ├── ImportController.java       # ZIP upload & parsing
+│       │   ├── HistoryController.java      # History CRUD, ZIP download, bulk delete
+│       │   ├── GatewayInfoController.java  # Gateway resource info
+│       │   └── SetupController.java        # Namespace setup
+│       ├── entity/             # Panache entities (JPA)
+│       │   ├── ProjectEntity.java
+│       │   └── ConversionHistoryEntity.java
+│       ├── model/              # DTOs / domain models
+│       ├── util/
+│       │   └── Messages.java   # i18n ResourceBundle wrapper
+│       └── resources/
+│           ├── application.properties
+│           ├── db/migration/
+│           │   ├── V1__init.sql
+│           │   ├── V2__add_sequences.sql
+│           │   └── V3__import_history.sql
+│           ├── messages_ja.properties
+│           └── messages_en.properties
+├── frontend/                   # React + PatternFly frontend
+│   └── src/
+│       ├── pages/              # Page components
+│       │   ├── ConnectionPage.tsx
+│       │   ├── APISelectionPage.tsx
+│       │   ├── CompatibilityPage.tsx
+│       │   ├── ConversionPage.tsx
+│       │   ├── YAMLViewerPage.tsx
+│       │   ├── ValidationPage.tsx
+│       │   ├── DownloadPage.tsx
+│       │   ├── ImportPage.tsx      # ZIP Import, apply, curl test with custom path
+│       │   └── HistoryPage.tsx     # History list, bulk delete, ZIP download
+│       ├── api/
+│       │   ├── client.ts       # Axios API client
+│       │   └── types.ts        # TypeScript type definitions
+│       ├── locales/
+│       │   ├── ja.json         # Japanese UI strings
+│       │   └── en.json         # English UI strings
+│       ├── i18n.ts             # react-i18next configuration
+│       └── App.tsx             # Layout & routing
+├── deploy/                     # OpenShift provisioning
+│   ├── install.sh              # All-in-one install script (bilingual)
+│   ├── backend/                # Backend OpenShift resource YAMLs
+│   ├── frontend/               # Frontend OpenShift resource YAMLs
+│   └── postgres/               # PostgreSQL Operator / Cluster / SCC YAMLs
+├── from-3scale-to-connectivity-link/  # Conversion adapter
+└── README.md
+```
+
+---
+
+## API Reference
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/connection/test` | Test 3scale connection |
+| GET | `/api/services` | List API services |
+| GET | `/api/services/{id}` | Get service details |
+| GET | `/api/services/{id}/compatibility` | Run compatibility check |
+| POST | `/api/convert` | Generate YAML (run conversion) |
+| POST | `/api/validate` | Validate generated YAML |
+| POST | `/api/download/zip` | Download ZIP |
+| POST | `/api/apply` | Apply to cluster (Server-Side Apply, auto RBAC, history save) |
+| POST | `/api/import/zip` | Upload and parse ZIP |
+| GET | `/api/history` | List conversion history (lightweight, excludes exportedYaml) |
+| GET | `/api/history/{id}` | Get conversion history entry |
+| GET | `/api/history/{id}/download` | Download applied YAML as ZIP |
+| DELETE | `/api/history` | Bulk delete history entries by ID list |
+| GET | `/api/history/projects` | List projects |
+| GET | `/api/gateway/info` | Get Gateway resource info from cluster |
+| POST | `/api/setup/namespace` | Apply Namespace setup resources |
+| GET | `/api/setup/status` | Check Namespace setup status |
+
+Swagger UI: `https://<backend-route>/q/swagger-ui`
+
+---
+
+## Data Model
+
+```
+Project
+  ├── id (PK)
+  ├── name
+  ├── namespace
+  ├── threescaleUrl
+  └── createdAt
+
+ConversionHistory
+  ├── id (PK)
+  ├── source          CONVERT | IMPORT
+  ├── namespace       target Namespace
+  ├── serviceId       (CONVERT only)
+  ├── serviceName     (CONVERT only)
+  ├── status          COMPLETED | PARTIAL | FAILED
+  ├── compatibilityScore  (CONVERT only)
+  ├── totalCount      total resources attempted
+  ├── successCount    successfully applied resources
+  ├── failureCount    failed resources
+  ├── failureDetails  JSON: [{fileName, kind, name, error}]
+  ├── exportedYaml    JSON: {filename → yaml} exported from cluster after apply
+  ├── yamlContent     (CONVERT only: full generated YAML text)
+  └── createdAt
+```
+
+Flyway migrations:
+- `V1__init.sql` — initial schema (Project / ConversionHistory)
+- `V2__add_sequences.sql` — sequence additions
+- `V3__import_history.sql` — Import history fields (source / namespace / totalCount / etc.)
+
+---
+
+## Internationalization (i18n)
+
+### Frontend
+
+- Powered by `react-i18next`
+- Default language: **Japanese (ja)**
+- Strings managed in `frontend/src/locales/ja.json` / `en.json`
+- Runtime language switch via the **JA / EN** toggle in the masthead
+
+### Backend
+
+- Java standard `ResourceBundle`
+- `backend/src/main/resources/messages_ja.properties` / `messages_en.properties`
+- `Messages` bean (`@ApplicationScoped`) injected into controllers
+
+---
+
+*Maintained by Noriaki Mushino — nmushino@redhat.com*
+
+---
+
+---
+
+# 日本語ドキュメント
+
+## Migration Toolkit for Red Hat Connectivity Link
+
 3scale から Red Hat Connectivity Link へ移行するための GUI ツールキットです。  
 Quarkus バックエンド + React/PatternFly フロントエンド で構成されています。
 
 ---
 
-## 目次 / Table of Contents
+## 目次
 
 - [スクリーンショット](#スクリーンショット)
 - [前提条件・必要ツール](#前提条件必要ツール)
@@ -17,7 +492,6 @@ Quarkus バックエンド + React/PatternFly フロントエンド で構成さ
 - [API一覧](#api一覧)
 - [データモデル](#データモデル)
 - [国際化対応 (i18n)](#国際化対応-i18n)
-- [English Documentation](#english-documentation)
 
 ---
 
@@ -461,462 +935,3 @@ Flyway マイグレーション:
 - Java 標準 `ResourceBundle` を使用
 - `backend/src/main/resources/messages_ja.properties` / `messages_en.properties`
 - `Messages` Bean (`@ApplicationScoped`) が各コントローラに注入される
-
----
-
----
-
-# English Documentation
-
-## Migration Toolkit for Red Hat Connectivity Link
-
-A GUI toolkit for migrating from 3scale to Red Hat Connectivity Link.  
-Built with a Quarkus backend and a React/PatternFly frontend.
-
----
-
-## Screenshots
-
-| 3scale Connection Setup | Compatibility Check |
-|:-:|:-:|
-| ![3scale Connection](.claude/images/connect.png) | ![Compatibility Check](.claude/images/apilist.png) |
-
-| YAML Generation | YAML Preview |
-|:-:|:-:|
-| ![YAML Generation](.claude/images/yaml.png) | ![YAML Preview](.claude/images/preview.png) |
-
-| Validation | Download |
-|:-:|:-:|
-| ![Validation](.claude/images/validation.png) | ![Download](.claude/images/download.png) |
-
-| ZIP Import / CL Config | curl Connectivity Test |
-|:-:|:-:|
-| ![ZIP Import](.claude/images/import.png) | ![curl Test](.claude/images/rhcltest.png) |
-
----
-
-## Prerequisites & Required Tools
-
-### Local Development
-
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Java (OpenJDK) | 21+ | Backend build |
-| Apache Maven | 3.9.x+ | Backend build |
-| Node.js | 18+ | Frontend build |
-| npm | 9+ | Frontend dependency management |
-| Docker / Podman | Latest | Container image build (local testing) |
-
-### OpenShift Cluster
-
-| Tool / Component | Version | Purpose |
-|-----------------|---------|---------|
-| OpenShift Container Platform | 4.14+ | Target deployment cluster |
-| `oc` CLI | Matching cluster version | Cluster operations |
-| CrunchyData PostgreSQL Operator | Latest | Database management (pre-install from OperatorHub) |
-| Red Hat Connectivity Link (Kuadrant) | Latest | Migration target component |
-
-> **Note**: Install the CrunchyData PostgreSQL Operator into the `openshift-operators`  
-> namespace **before** running the install script. The script detects it automatically.
-
-### 3scale Environment
-
-- 3scale Admin Portal URL and a Personal Access Token
-
----
-
-### Required tools
-Use of the following tool is required:
-https://github.com/maximilianoPizarro/from-3scale-to-connectivity-link
-
-## Quick Start
-
-### Full Deploy to OpenShift
-
-```bash
-# Deploy to a specific namespace (default: migration-toolkit)
-NAMESPACE=migration-toolkit ./deploy/install.sh
-
-# Backend only
-NAMESPACE=migration-toolkit ./deploy/install.sh --backend-only
-
-# Frontend only
-NAMESPACE=migration-toolkit ./deploy/install.sh --frontend-only
-
-# Database only
-NAMESPACE=migration-toolkit ./deploy/install.sh --db-only
-```
-
-The install script handles:
-
-1. Namespace creation
-2. Waiting for CrunchyData PostgreSQL Operator
-3. PostgreSQL cluster creation (including SCC)
-4. Backend Maven build → S2I → deployment
-5. Frontend npm build → S2I (nginx) → deployment
-6. Printing access URLs
-
-### Language Selection
-
-```bash
-# Japanese (default)
-./deploy/install.sh
-
-# Run in English
-INSTALL_LANG=en ./deploy/install.sh
-```
-
-### Local Development
-
-```bash
-# Start backend (PostgreSQL must be running on localhost:5432)
-cd backend
-mvn quarkus:dev
-
-# Start frontend (separate terminal)
-cd frontend
-npm install --legacy-peer-deps
-VITE_API_URL=http://localhost:8080 npm run dev
-```
-
----
-
-## Architecture
-
-```
-               +----------------------+
-               |      Web UI          |
-               |  (React/PatternFly)  |
-               +----------+-----------+
-                          |
-                    REST API (JSON)
-                          |
-        +-----------------+------------------+
-        |     Quarkus Backend (Java 21)      |
-        |                                    |
-        | ① 3scale Export                    |
-        | ② Parser / Compatibility Checker   |
-        | ③ Converter (YAML Generator)       |
-        | ④ Validation                       |
-        | ⑤ Package Download (ZIP)           |
-        | ⑥ Import / Apply to Cluster        |
-        |    (auto RBAC provisioning)        |
-        | ⑦ ZIP Import Conversion History    |
-        | ⑧ Gateway Info                     |
-        | ⑨ Namespace Setup                  |
-        +-----------------+------------------+
-                    |               |
-       from-3scale-to-connectivity  PostgreSQL
-            -link (Adapter)         (CrunchyData)
-                    |
-          Connectivity Link YAML
-         (Gateway / HTTPRoute / AuthPolicy /
-          RateLimitPolicy / DestinationRule /
-          ServiceEntry / Secret / ConfigMap)
-```
-
-**Technology Stack**
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, PatternFly 5, Vite, TypeScript, react-i18next |
-| Backend | Quarkus 3.8.4 (Java 21), RESTEasy Reactive, Hibernate ORM Panache |
-| Database | PostgreSQL (managed by CrunchyData Operator) |
-| Kubernetes client | Fabric8 Kubernetes Client 6.7.x |
-| OpenAPI | SmallRye OpenAPI + Swagger UI (`/q/swagger-ui`) |
-| DB Migrations | Flyway (V1–V3) |
-| Deployment | OpenShift S2I, nginx (frontend static serving) |
-
----
-
-## Workflow
-
-```
-① Configure 3scale connection (URL / Access Token / Tenant / Namespace)
-      ↓
-② Fetch API list (Service / Backend / MappingRule / Metrics / Policies / Auth)
-      ↓
-③ Select APIs to migrate
-      ↓
-④ Compatibility Check (scoring: JWT / Rewrite / Lua Policy / SOAP, etc.)
-      ↓
-⑤ Generate YAML (via from-3scale-to-connectivity-link adapter)
-      ↓
-⑥ Preview / edit YAML in browser
-      ↓
-⑦ Validation (YAML syntax / CRD / Namespace / Secret / Reference)
-      ↓
-⑧ Download as ZIP
-      ↓
-⑨ ZIP Import → apply to cluster
-     · Auto-create Role/RoleBinding in target Namespace
-     · Apply via Server-Side Apply
-     · Export applied resources (-o yaml equivalent) and save to history
-      ↓
-⑩ Review conversion history (success/failure counts, error details, re-download ZIP)
-```
-
----
-
-## Features
-
-### 1. 3scale Connection Setup
-
-Input fields:
-- 3scale Admin Portal URL
-- Personal Access Token
-- Tenant name (optional)
-- Target OpenShift Namespace
-
-3scale APIs called by the backend:
-```
-GET /admin/api/services.json
-GET /admin/api/backends.json
-GET /admin/api/proxy_configs
-GET /admin/api/policies
-```
-
-### 2. API List
-
-Information retrieved:
-- Service basics (ID / name / deployment option)
-- Backend (Private Endpoint)
-- Mapping Rules
-- Metrics
-- Policies
-- Authentication type (API Key / OIDC / JWT, etc.)
-
-### 3. Compatibility Check
-
-Evaluates whether each API policy/feature can be migrated to Connectivity Link:
-
-| Result | Meaning |
-|--------|---------|
-| ✔ SUPPORTED | Migrates as-is |
-| ⚠ WARNING | Manual adjustment required |
-| × UNSUPPORTED | Not supported (requires custom handling) |
-
-A Migration Score (0–100%) quantifies the overall migration effort.
-
-### 4. YAML Generation
-
-Resources generated via the `from-3scale-to-connectivity-link` adapter:
-
-```
-{service-name}/
-  gateway.yaml         # Kuadrant Gateway
-  httproute.yaml       # HTTPRoute
-  policy.yaml          # AuthPolicy / RateLimitPolicy
-  secret.yaml          # Credentials (REPLACE_ME placeholders)
-  configmap.yaml       # Configuration values
-  destinationrule.yaml # Istio DestinationRule (TLS)
-  serviceentry.yaml    # Istio ServiceEntry (external service)
-  README.md
-```
-
-> Replace `REPLACE_ME` placeholders in `secret.yaml` with actual values before applying.
-
-### 5. YAML Preview
-
-View and edit all generated files in a code viewer inside the browser.
-
-### 6. Validation
-
-Automated checks on generated YAML:
-- ✔ YAML syntax
-- ✔ CRD (API version)
-- ✔ Namespace configuration
-- ✔ Resource reference consistency
-- ✔ Secret placeholder detection
-
-### 7. ZIP Download
-
-Download all generated files as a ZIP archive.  
-Example filename: `customer-api.zip`
-
-### 8. ZIP Import / Apply Connectivity Link Config
-
-Upload a ZIP and:
-- Preview and edit YAML in the browser
-- Bulk-replace the target Namespace
-- Apply directly to the cluster via `oc apply` (through backend)
-
-Automatic processing on apply:
-- Auto-create `migration-tool-istio-manager` Role and RoleBinding in the target Namespace
-- Grants permissions for Istio / Kuadrant / Gateway API / core API resources
-- Automatic `apiVersion` normalization (e.g., `kuadrant.io/v1beta2 → v1`)
-- Exports each applied resource from the cluster and saves to history
-
-Test command feature:
-- Generates a curl command for connectivity verification after apply
-- Custom path input field to append a path to the base URL
-
-### 9. Conversion History (ZIP Import)
-
-A history record is created for every ZIP Import run:
-
-| Field | Description |
-|-------|-------------|
-| Timestamp | Execution date/time |
-| Type | ZIP Import / Convert |
-| Namespace | Target Namespace |
-| Status | COMPLETED / PARTIAL / FAILED |
-| Success count | Number of successfully applied resources |
-| Failure count | Number of failed resources |
-| Error details | Filename, Kind, Name, error message per failure (expandable row) |
-| YAML download | ZIP of resources exported from cluster after apply |
-
-Actions:
-- Checkbox selection for bulk delete (to reduce DB size)
-- Per-row ZIP download button to retrieve applied YAML
-
-### 10. Gateway Info
-
-Retrieves Gateway resource list and Listener information from the cluster in real time.
-
-### 11. Namespace Setup
-
-Automatically applies resources required for Connectivity Link to operate in the target Namespace.
-
----
-
-## Directory Structure
-
-```
-migration-toolkit-rhcl/
-├── backend/                    # Quarkus backend (Java 21)
-│   └── src/main/java/com/example/migrationtool/
-│       ├── controller/         # REST endpoints
-│       │   ├── ConnectionController.java   # 3scale connection test
-│       │   ├── ExportController.java       # Service list & compatibility check
-│       │   ├── ConversionController.java   # YAML generation
-│       │   ├── ValidationController.java   # YAML validation
-│       │   ├── PackageController.java      # ZIP download
-│       │   ├── ApplyController.java        # Cluster apply, history save, auto RBAC
-│       │   ├── ImportController.java       # ZIP upload & parsing
-│       │   ├── HistoryController.java      # History CRUD, ZIP download, bulk delete
-│       │   ├── GatewayInfoController.java  # Gateway resource info
-│       │   └── SetupController.java        # Namespace setup
-│       ├── entity/             # Panache entities (JPA)
-│       │   ├── ProjectEntity.java
-│       │   └── ConversionHistoryEntity.java
-│       ├── model/              # DTOs / domain models
-│       ├── util/
-│       │   └── Messages.java   # i18n ResourceBundle wrapper
-│       └── resources/
-│           ├── application.properties
-│           ├── db/migration/
-│           │   ├── V1__init.sql
-│           │   ├── V2__add_sequences.sql
-│           │   └── V3__import_history.sql
-│           ├── messages_ja.properties
-│           └── messages_en.properties
-├── frontend/                   # React + PatternFly frontend
-│   └── src/
-│       ├── pages/              # Page components
-│       │   ├── ConnectionPage.tsx
-│       │   ├── APISelectionPage.tsx
-│       │   ├── CompatibilityPage.tsx
-│       │   ├── ConversionPage.tsx
-│       │   ├── YAMLViewerPage.tsx
-│       │   ├── ValidationPage.tsx
-│       │   ├── DownloadPage.tsx
-│       │   ├── ImportPage.tsx      # ZIP Import, apply, curl test with custom path
-│       │   └── HistoryPage.tsx     # History list, bulk delete, ZIP download
-│       ├── api/
-│       │   ├── client.ts       # Axios API client
-│       │   └── types.ts        # TypeScript type definitions
-│       ├── locales/
-│       │   ├── ja.json         # Japanese UI strings
-│       │   └── en.json         # English UI strings
-│       ├── i18n.ts             # react-i18next configuration
-│       └── App.tsx             # Layout & routing
-├── deploy/                     # OpenShift provisioning
-│   ├── install.sh              # All-in-one install script (bilingual)
-│   ├── backend/                # Backend OpenShift resource YAMLs
-│   ├── frontend/               # Frontend OpenShift resource YAMLs
-│   └── postgres/               # PostgreSQL Operator / Cluster / SCC YAMLs
-├── from-3scale-to-connectivity-link/  # Conversion adapter
-└── README.md
-```
-
----
-
-## API Reference
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/connection/test` | Test 3scale connection |
-| GET | `/api/services` | List API services |
-| GET | `/api/services/{id}` | Get service details |
-| GET | `/api/services/{id}/compatibility` | Run compatibility check |
-| POST | `/api/convert` | Generate YAML (run conversion) |
-| POST | `/api/validate` | Validate generated YAML |
-| POST | `/api/download/zip` | Download ZIP |
-| POST | `/api/apply` | Apply to cluster (Server-Side Apply, auto RBAC, history save) |
-| POST | `/api/import/zip` | Upload and parse ZIP |
-| GET | `/api/history` | List conversion history (lightweight, excludes exportedYaml) |
-| GET | `/api/history/{id}` | Get conversion history entry |
-| GET | `/api/history/{id}/download` | Download applied YAML as ZIP |
-| DELETE | `/api/history` | Bulk delete history entries by ID list |
-| GET | `/api/history/projects` | List projects |
-| GET | `/api/gateway/info` | Get Gateway resource info from cluster |
-| POST | `/api/setup/namespace` | Apply Namespace setup resources |
-| GET | `/api/setup/status` | Check Namespace setup status |
-
-Swagger UI: `https://<backend-route>/q/swagger-ui`
-
----
-
-## Data Model
-
-```
-Project
-  ├── id (PK)
-  ├── name
-  ├── namespace
-  ├── threescaleUrl
-  └── createdAt
-
-ConversionHistory
-  ├── id (PK)
-  ├── source          CONVERT | IMPORT
-  ├── namespace       target Namespace
-  ├── serviceId       (CONVERT only)
-  ├── serviceName     (CONVERT only)
-  ├── status          COMPLETED | PARTIAL | FAILED
-  ├── compatibilityScore  (CONVERT only)
-  ├── totalCount      total resources attempted
-  ├── successCount    successfully applied resources
-  ├── failureCount    failed resources
-  ├── failureDetails  JSON: [{fileName, kind, name, error}]
-  ├── exportedYaml    JSON: {filename → yaml} exported from cluster after apply
-  ├── yamlContent     (CONVERT only: full generated YAML text)
-  └── createdAt
-```
-
-Flyway migrations:
-- `V1__init.sql` — initial schema (Project / ConversionHistory)
-- `V2__add_sequences.sql` — sequence additions
-- `V3__import_history.sql` — Import history fields (source / namespace / totalCount / etc.)
-
----
-
-## Internationalization (i18n)
-
-### Frontend
-
-- Powered by `react-i18next`
-- Default language: **Japanese (ja)**
-- Strings managed in `frontend/src/locales/ja.json` / `en.json`
-- Runtime language switch via the **JA / EN** toggle in the masthead
-
-### Backend
-
-- Java standard `ResourceBundle`
-- `backend/src/main/resources/messages_ja.properties` / `messages_en.properties`
-- `Messages` bean (`@ApplicationScoped`) injected into controllers
-
----
-
-*Maintained by Noriaki Mushino — nmushino@redhat.com*
